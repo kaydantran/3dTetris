@@ -11,11 +11,11 @@ public class TetrisGrid : MonoBehaviour
 {
     [Header("Grid Dimensions")]
     [Tooltip("Width of the play area in cells (X axis).")]
-    [SerializeField] private int width = 7;
+    [SerializeField] private int width = 10;
     [Tooltip("Depth of the play area in cells (Z axis).")]
-    [SerializeField] private int depth = 7;
+    [SerializeField] private int depth = 10;
     [Tooltip("Height of the play area in cells (Y axis). Pieces spawn near the top.")]
-    [SerializeField] private int height = 10;
+    [SerializeField] private int height = 20;
 
     [Header("Top Boundary")]
     [Tooltip("Highest safe occupied row. Locking any block above this row triggers GameOver. -1 defaults to height - 2.")]

@@ -13,14 +13,14 @@ public class OrbitCamera : MonoBehaviour
     [SerializeField] private TetrisGrid grid;
 
     [Header("Orbit")]
-    [SerializeField] private float distance = 18f;
+    [SerializeField] private float distance = 24f;
     [SerializeField] private float minDistance = 8f;
-    [SerializeField] private float maxDistance = 40f;
+    [SerializeField] private float maxDistance = 56f;
 
     [Tooltip("Degrees per pixel of mouse movement.")]
     [SerializeField] private float rotationSpeed = 0.3f;
     [Tooltip("Vertical angle clamp so camera doesn't flip over. (min, max) in degrees.")]
-    [SerializeField] private Vector2 pitchLimits = new Vector2(-20f, 80f);
+    [SerializeField] private Vector2 pitchLimits = new Vector2(-20f, 90f);
 
     [Header("Zoom")]
     [SerializeField] private float zoomSpeed = 4f;
@@ -37,6 +37,7 @@ public class OrbitCamera : MonoBehaviour
     [SerializeField] private float faceYawStep = 90f;
     [SerializeField] private float flatFacePitch = 0f;
     [SerializeField] private float elevatedFacePitch = 45f;
+    [SerializeField] private float topDownFacePitch = 90f;
 
     private float yaw = 35f;
     private float pitch = 25f;
@@ -120,7 +121,18 @@ public class OrbitCamera : MonoBehaviour
     public void SetElevatedFaceView()
     {
         targetYaw = GetNearestFaceYaw(targetYaw);
-        targetPitch = Mathf.Clamp(elevatedFacePitch, pitchLimits.x, pitchLimits.y);
+
+        float elevatedPitch = Mathf.Clamp(elevatedFacePitch, pitchLimits.x, pitchLimits.y);
+        float topDownPitch = Mathf.Clamp(topDownFacePitch, pitchLimits.x, pitchLimits.y);
+
+        // Pressing the same modifier again steps from elevated to top-down.
+        if (Mathf.Abs(targetPitch - elevatedPitch) <= 0.5f)
+        {
+            targetPitch = topDownPitch;
+            return;
+        }
+
+        targetPitch = elevatedPitch;
     }
 
     public void SetFlatFaceView()

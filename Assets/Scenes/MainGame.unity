@@ -148,9 +148,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0c336521bba274890942d9a083903f89, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TetrisGrid
-  width: 7
-  depth: 7
-  height: 10
+  width: 10
+  depth: 10
+  height: 20
   topBoundaryY: -1
   showRuntimeBoundaryVisuals: 1
   boundaryColor: {r: 0.25, g: 0.75, b: 1, a: 0.75}
@@ -281,19 +281,18 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::OrbitCamera
   target: {fileID: 0}
   grid: {fileID: 738961776}
-  distance: 18
+  distance: 24
   minDistance: 8
-  maxDistance: 40
+  maxDistance: 56
   rotationSpeed: 0.3
   pitchLimits: {x: -20, y: 80}
   zoomSpeed: 4
   smoothing: 12
   dragMouseButton: 0
-  keyboardYawStep: 90
-  rotateLeftKey: 97
-  rotateRightKey: 100
-  alternateRotateLeftKey: 91
-  alternateRotateRightKey: 93
+  faceYawStep: 90
+  flatFacePitch: 0
+  elevatedFacePitch: 45
+  topDownFacePitch: 90
 --- !u!114 &1206521279
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -507,14 +506,9 @@ MonoBehaviour:
   - {fileID: 8655858587352886489, guid: 45676643bdcc54f2db7522e50dc45c64, type: 3}
   - {fileID: 6493851677052744614, guid: 40a44f1a3bbc4425ba1f2cca3129287c, type: 3}
   - {fileID: 2287015678945164085, guid: 43d7ba5de88a0423fb19cfe66033cde3, type: 3}
-  pieceMaterials:
-  - {fileID: 2100000, guid: 2452f4568f8eb4ac5a494dfe2c4678bf, type: 2}
-  - {fileID: 2100000, guid: bb0474999857d4e28a05a4ba1f5cc150, type: 2}
-  - {fileID: 2100000, guid: c35c460eebd364090baed2836ad5db72, type: 2}
-  - {fileID: 2100000, guid: 6dde6e29652bf421ebe09166020e59bd, type: 2}
-  - {fileID: 2100000, guid: 8b463b4ec3b714d418b2484c1848aa6a, type: 2}
-  - {fileID: 2100000, guid: 3d8e7c9220bed45cf978865d0bde5381, type: 2}
   ghostMaterial: {fileID: 2100000, guid: 6dbe8dc8b69b54a9780e2c0201052015, type: 2}
+  ghostTintStrength: 0.2
+  ghostOpacity: 0.18
   delayedAutoShift: 0.16
   autoRepeatRate: 0.05
   initialDropInterval: 1
@@ -524,15 +518,24 @@ MonoBehaviour:
   baseLockDelay: 0.5
   maxLockResets: 15
   spawnHeightOffset: 2
-  rotateXKey: 101
-  rotateZKey: 114
-  rotate180Key: 102
-  holdKey: 119
-  moveBackKey: 115
+  moveLeftKey: 97
+  moveRightKey: 100
+  moveInwardKey: 115
+  moveOutwardKey: 119
+  holdKey: 113
+  rotateCounterClockwiseKey: 106
+  rotateClockwiseKey: 107
+  rotateUpKey: 117
+  rotateDownKey: 110
+  cameraModifierKey: 304
+  softDropKey: 303
+  elevateViewKey: 117
+  flattenViewKey: 110
   showRotationIndicators: 1
-  xRotationIndicatorColor: {r: 1, g: 0.55, b: 0.35, a: 0.95}
-  zRotationIndicatorColor: {r: 0.35, g: 0.9, b: 1, a: 0.95}
-  rotate180IndicatorColor: {r: 1, g: 0.95, b: 0.35, a: 0.95}
+  counterClockwiseIndicatorColor: {r: 1, g: 0.55, b: 0.35, a: 0.95}
+  clockwiseIndicatorColor: {r: 0.35, g: 0.9, b: 1, a: 0.95}
+  upwardRotationIndicatorColor: {r: 0.75, g: 1, b: 0.45, a: 0.95}
+  downwardRotationIndicatorColor: {r: 1, g: 0.7, b: 0.35, a: 0.95}
   rotationIndicatorHeightOffset: 0.6
   rotationIndicatorPadding: 0.45
 --- !u!114 &1790465953

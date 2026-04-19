@@ -25,6 +25,10 @@ public class ActivePieceController : MonoBehaviour
     [Header("Ghost Piece")]
     [Tooltip("Material applied to the ghost silhouette (should be transparent).")]
     [SerializeField] private Material ghostMaterial;
+    [Tooltip("How much of the live piece color is carried into the ghost silhouette.")]
+    [SerializeField, Range(0f, 1f)] private float ghostTintStrength = 0.2f;
+    [Tooltip("Opacity of the ghost silhouette after tinting.")]
+    [SerializeField, Range(0f, 1f)] private float ghostOpacity = 0.18f;
 
     [Header("Movement Feel")]
     [Tooltip("How long a held move key waits before it starts repeating.")]
@@ -34,7 +38,7 @@ public class ActivePieceController : MonoBehaviour
 
     [Header("Drop Speed")]
     [Tooltip("Seconds between automatic downward steps at the start of the game.")]
-    [SerializeField] private float initialDropInterval = 1.0f;
+    [SerializeField] private float initialDropInterval = 2.0f;
     [Tooltip("Minimum cap on drop interval so gameplay never becomes literally impossible.")]
     [SerializeField] private float minDropInterval = 0.05f;
     [Tooltip("Multiplier applied each time IncreaseDropSpeed() is called. 0.85 = 15% faster per bump.")]
@@ -60,6 +64,9 @@ public class ActivePieceController : MonoBehaviour
     [SerializeField] private KeyCode holdKey = KeyCode.Q;
     [SerializeField] private KeyCode rotateCounterClockwiseKey = KeyCode.J;
     [SerializeField] private KeyCode rotateClockwiseKey = KeyCode.K;
+    [SerializeField] private KeyCode rotateUpKey = KeyCode.U;
+    [SerializeField] private KeyCode rotateDownKey = KeyCode.N;
+    [SerializeField] private KeyCode cameraModifierKey = KeyCode.LeftShift;
     [SerializeField] private KeyCode softDropKey = KeyCode.RightShift;
     [SerializeField] private KeyCode elevateViewKey = KeyCode.U;
     [SerializeField] private KeyCode flattenViewKey = KeyCode.N;
@@ -68,6 +75,8 @@ public class ActivePieceController : MonoBehaviour
     [SerializeField] private bool showRotationIndicators = true;
     [SerializeField] private Color counterClockwiseIndicatorColor = new Color(1f, 0.55f, 0.35f, 0.95f);
     [SerializeField] private Color clockwiseIndicatorColor = new Color(0.35f, 0.9f, 1f, 0.95f);
+    [SerializeField] private Color upwardRotationIndicatorColor = new Color(0.75f, 1f, 0.45f, 0.95f);
+    [SerializeField] private Color downwardRotationIndicatorColor = new Color(1f, 0.7f, 0.35f, 0.95f);
     [SerializeField] private float rotationIndicatorHeightOffset = 0.6f;
     [SerializeField] private float rotationIndicatorPadding = 0.45f;
 
@@ -82,6 +91,7 @@ public class ActivePieceController : MonoBehaviour
     private readonly Queue<int> pieceBag = new Queue<int>();
     private readonly List<int> bagBuffer = new List<int>(7);
     private bool warnedAboutBagSize;
+    private int activeRotationState;
 
     private float currentDropInterval;
     private float dropTimer;
@@ -145,6 +155,9 @@ public class ActivePieceController : MonoBehaviour
         holdKey = KeyCode.Q;
         rotateCounterClockwiseKey = KeyCode.J;
         rotateClockwiseKey = KeyCode.K;
+        rotateUpKey = KeyCode.U;
+        rotateDownKey = KeyCode.N;
+        cameraModifierKey = KeyCode.LeftShift;
         softDropKey = KeyCode.RightShift;
         elevateViewKey = KeyCode.U;
         flattenViewKey = KeyCode.N;
@@ -223,6 +236,16 @@ public class ActivePieceController : MonoBehaviour
             TryRotateOnViewedPlane(-90f);
         }
 
+        if (Input.GetKeyDown(rotateUpKey))
+        {
+            TryRotateOnHorizontalScreenAxis(90f);
+        }
+
+        if (Input.GetKeyDown(rotateDownKey))
+        {
+            TryRotateOnHorizontalScreenAxis(-90f);
+        }
+
         if (Input.GetKeyDown(KeyCode.Space))
         {
             HardDrop();
@@ -234,7 +257,7 @@ public class ActivePieceController : MonoBehaviour
 
     private bool HandleCameraModifierInput()
     {
-        if (!IsSoftDropHeld()) return false;
+        if (!Input.GetKey(cameraModifierKey)) return false;
         if (orbitCamera == null) return false;
 
         if (Input.GetKeyDown(rotateCounterClockwiseKey))
@@ -349,7 +372,19 @@ public class ActivePieceController : MonoBehaviour
 
     private bool TryRotateOnViewedPlane(float angle)
     {
+        if (string.Equals(GetActivePieceCode(), "O", StringComparison.Ordinal))
+        {
+            // Keep face-view spins on O as a no-op, but still allow U/N to tilt it into depth.
+            return true;
+        }
+
         Vector3 axis = GetCameraRelativeForward();
+        return TryRotate(axis, angle);
+    }
+
+    private bool TryRotateOnHorizontalScreenAxis(float angle)
+    {
+        Vector3 axis = GetCameraRelativeRight();
         return TryRotate(axis, angle);
     }
 
@@ -409,6 +444,12 @@ public class ActivePieceController : MonoBehaviour
         return bestDirection;
     }
 
+    private Vector3Int GetCameraRelativeRight()
+    {
+        Vector3Int forward = GetCameraRelativeForward();
+        return new Vector3Int(forward.z, 0, -forward.x);
+    }
+
     private Camera ResolveGameplayCamera()
     {
         if (gameplayCamera != null) return gameplayCamera;
@@ -438,32 +479,42 @@ public class ActivePieceController : MonoBehaviour
     {
         if (activePiece == null) return false;
 
+        string pieceCode = GetActivePieceCode();
         Quaternion delta = Quaternion.AngleAxis(angle, worldAxis);
         Quaternion newRotation = delta * activePiece.transform.rotation;
+        int rotationDelta = angle < 0f ? 1 : -1;
+        int fromState = activeRotationState;
+        int toState = Mod(activeRotationState + rotationDelta, 4);
 
         if (grid.IsValidPosition(activePiece.transform, activePiece.transform.position, newRotation))
         {
             activePiece.transform.rotation = newRotation;
+            activeRotationState = toState;
             OnPieceMovedOrRotated();
             return true;
         }
 
-        Vector3Int[] kicks =
+        Vector3 horizontalKickAxis = Vector3.Cross(Vector3.up, worldAxis);
+        if (horizontalKickAxis.sqrMagnitude < 0.0001f)
         {
-            Vector3Int.right,
-            Vector3Int.left,
-            Vector3Int.forward,
-            Vector3Int.back,
-            Vector3Int.up
-        };
+            horizontalKickAxis = Vector3.right;
+        }
+        else
+        {
+            horizontalKickAxis.Normalize();
+        }
 
-        foreach (Vector3Int kick in kicks)
+        Vector2Int[] kicks = GetKickOffsets(pieceCode, fromState, toState);
+
+        foreach (Vector2Int kick in kicks)
         {
-            Vector3 testPosition = activePiece.transform.position + new Vector3(kick.x, kick.y, kick.z);
+            Vector3 kickOffset = horizontalKickAxis * kick.x + Vector3.up * kick.y;
+            Vector3 testPosition = activePiece.transform.position + kickOffset;
             if (!grid.IsValidPosition(activePiece.transform, testPosition, newRotation)) continue;
 
             activePiece.transform.position = testPosition;
             activePiece.transform.rotation = newRotation;
+            activeRotationState = toState;
             OnPieceMovedOrRotated();
             return true;
         }
@@ -730,13 +781,38 @@ public class ActivePieceController : MonoBehaviour
             Destroy(collider);
         }
 
-        if (ghostMaterial != null)
+        Renderer[] sourceRenderers = activePiece.GetComponentsInChildren<Renderer>();
+        Renderer[] ghostRenderers = ghostPiece.GetComponentsInChildren<Renderer>();
+        MaterialPropertyBlock ghostBlock = new MaterialPropertyBlock();
+
+        for (int i = 0; i < ghostRenderers.Length; i++)
         {
-            foreach (Renderer renderer in ghostPiece.GetComponentsInChildren<Renderer>())
+            Renderer ghostRenderer = ghostRenderers[i];
+            if (ghostRenderer == null) continue;
+
+            if (ghostMaterial != null)
             {
-                renderer.sharedMaterial = ghostMaterial;
-                renderer.SetPropertyBlock(null);
+                ghostRenderer.sharedMaterial = ghostMaterial;
             }
+
+            Color sourceColor = i < sourceRenderers.Length
+                ? GetRendererBaseColor(sourceRenderers[i].sharedMaterial)
+                : Color.white;
+
+            Color ghostColor = Color.Lerp(Color.white, sourceColor, ghostTintStrength);
+            ghostColor.a = ghostOpacity;
+
+            ghostBlock.Clear();
+
+            Material ghostSharedMaterial = ghostRenderer.sharedMaterial;
+            if (ghostSharedMaterial != null)
+            {
+                if (ghostSharedMaterial.HasProperty(BaseColorID)) ghostBlock.SetColor(BaseColorID, ghostColor);
+                if (ghostSharedMaterial.HasProperty(ColorID)) ghostBlock.SetColor(ColorID, ghostColor);
+                if (ghostSharedMaterial.HasProperty(EmissionColorID)) ghostBlock.SetColor(EmissionColorID, Color.black);
+            }
+
+            ghostRenderer.SetPropertyBlock(ghostBlock);
         }
     }
 
@@ -844,7 +920,7 @@ public class ActivePieceController : MonoBehaviour
 
             for (int i = bagBuffer.Count - 1; i > 0; i--)
             {
-                int swapIndex = Random.Range(0, i + 1);
+                int swapIndex = UnityEngine.Random.Range(0, i + 1);
                 (bagBuffer[i], bagBuffer[swapIndex]) = (bagBuffer[swapIndex], bagBuffer[i]);
             }
 
@@ -873,6 +949,7 @@ public class ActivePieceController : MonoBehaviour
         ));
 
         activePiece = Instantiate(prefab, spawnPosition, Quaternion.identity);
+        activeRotationState = 0;
 
         PieceTag tag = activePiece.GetComponent<PieceTag>() ?? activePiece.AddComponent<PieceTag>();
         tag.PrefabIndex = prefabIndex;
@@ -919,12 +996,17 @@ public class ActivePieceController : MonoBehaviour
         Bounds pieceBounds = GetActivePieceBounds();
         float radius = Mathf.Max(pieceBounds.extents.x, pieceBounds.extents.z) + rotationIndicatorPadding;
         float indicatorHeight = pieceBounds.extents.y + rotationIndicatorHeightOffset;
+        float verticalRadius = radius * 0.72f;
 
         CreateArcIndicator("RotateCCW", counterClockwiseIndicatorColor, indicatorHeight, radius, startDegrees: 210f, endDegrees: 35f);
         CreateArcIndicator("RotateCW", clockwiseIndicatorColor, indicatorHeight, radius, startDegrees: -30f, endDegrees: -205f);
+        CreateVerticalArcIndicator("RotateUp", upwardRotationIndicatorColor, indicatorHeight, verticalRadius, startDegrees: 160f, endDegrees: 20f);
+        CreateVerticalArcIndicator("RotateDown", downwardRotationIndicatorColor, indicatorHeight, verticalRadius, startDegrees: -20f, endDegrees: -160f);
 
         CreateKeyLabel(rotateCounterClockwiseKey.ToString(), new Vector3(-radius - 0.25f, indicatorHeight, 0f), counterClockwiseIndicatorColor);
         CreateKeyLabel(rotateClockwiseKey.ToString(), new Vector3(radius + 0.25f, indicatorHeight, 0f), clockwiseIndicatorColor);
+        CreateKeyLabel(rotateUpKey.ToString(), new Vector3(0f, indicatorHeight + verticalRadius + 0.25f, 0f), upwardRotationIndicatorColor);
+        CreateKeyLabel(rotateDownKey.ToString(), new Vector3(0f, indicatorHeight - verticalRadius - 0.25f, 0f), downwardRotationIndicatorColor);
     }
 
     private Bounds GetActivePieceBounds()
@@ -998,6 +1080,29 @@ public class ActivePieceController : MonoBehaviour
         Vector3 previous = points[points.Length - 2];
         Vector3 direction = (end - previous).normalized;
         Vector3 side = Vector3.Cross(Vector3.up, direction).normalized * 0.14f;
+        Vector3 arrowBase = end - direction * 0.18f;
+
+        CreateLineRenderer(name + "_Head", color, 0.035f, arrowBase + side, end, arrowBase - side);
+    }
+
+    private void CreateVerticalArcIndicator(string name, Color color, float centerHeight, float radius, float startDegrees, float endDegrees)
+    {
+        const int segments = 18;
+        Vector3[] points = new Vector3[segments + 1];
+
+        for (int i = 0; i <= segments; i++)
+        {
+            float t = (float)i / segments;
+            float angle = Mathf.Lerp(startDegrees, endDegrees, t) * Mathf.Deg2Rad;
+            points[i] = new Vector3(0f, Mathf.Sin(angle) * radius + centerHeight, Mathf.Cos(angle) * radius * 0.6f);
+        }
+
+        CreateLineRenderer(name + "_Arc", color, 0.04f, points);
+
+        Vector3 end = points[points.Length - 1];
+        Vector3 previous = points[points.Length - 2];
+        Vector3 direction = (end - previous).normalized;
+        Vector3 side = Vector3.Cross(Vector3.right, direction).normalized * 0.14f;
         Vector3 arrowBase = end - direction * 0.18f;
 
         CreateLineRenderer(name + "_Head", color, 0.035f, arrowBase + side, end, arrowBase - side);
@@ -1153,6 +1258,169 @@ public class ActivePieceController : MonoBehaviour
         return prefab.name;
     }
 
+    private string GetActivePieceCode()
+    {
+        if (activePiece == null) return string.Empty;
+
+        PieceTag tag = activePiece.GetComponent<PieceTag>();
+        return tag != null ? GetPieceCode(tag.PrefabIndex) : string.Empty;
+    }
+
+    private static int Mod(int value, int modulus)
+    {
+        int remainder = value % modulus;
+        return remainder < 0 ? remainder + modulus : remainder;
+    }
+
+    private static Vector2Int[] GetKickOffsets(string pieceCode, int fromState, int toState)
+    {
+        if (string.Equals(pieceCode, "I", StringComparison.Ordinal))
+        {
+            return GetIKickOffsets(fromState, toState);
+        }
+
+        if (string.Equals(pieceCode, "J", StringComparison.Ordinal)
+            || string.Equals(pieceCode, "L", StringComparison.Ordinal)
+            || string.Equals(pieceCode, "S", StringComparison.Ordinal)
+            || string.Equals(pieceCode, "T", StringComparison.Ordinal)
+            || string.Equals(pieceCode, "Z", StringComparison.Ordinal))
+        {
+            return GetJlstzKickOffsets(fromState, toState);
+        }
+
+        return GetFallbackKickOffsets();
+    }
+
+    private static Vector2Int[] GetJlstzKickOffsets(int fromState, int toState)
+    {
+        if (fromState == 0 && toState == 1)
+        {
+            return new[]
+            {
+                new Vector2Int(0, 0),
+                new Vector2Int(-1, 0),
+                new Vector2Int(-1, 1),
+                new Vector2Int(0, -2),
+                new Vector2Int(-1, -2)
+            };
+        }
+
+        if ((fromState == 1 && toState == 0) || (fromState == 1 && toState == 2))
+        {
+            return new[]
+            {
+                new Vector2Int(0, 0),
+                new Vector2Int(1, 0),
+                new Vector2Int(1, -1),
+                new Vector2Int(0, 2),
+                new Vector2Int(1, 2)
+            };
+        }
+
+        if (fromState == 2 && toState == 1)
+        {
+            return new[]
+            {
+                new Vector2Int(0, 0),
+                new Vector2Int(-1, 0),
+                new Vector2Int(-1, 1),
+                new Vector2Int(0, -2),
+                new Vector2Int(-1, -2)
+            };
+        }
+
+        if ((fromState == 2 && toState == 3) || (fromState == 0 && toState == 3))
+        {
+            return new[]
+            {
+                new Vector2Int(0, 0),
+                new Vector2Int(1, 0),
+                new Vector2Int(1, 1),
+                new Vector2Int(0, -2),
+                new Vector2Int(1, -2)
+            };
+        }
+
+        if ((fromState == 3 && toState == 2) || (fromState == 3 && toState == 0))
+        {
+            return new[]
+            {
+                new Vector2Int(0, 0),
+                new Vector2Int(-1, 0),
+                new Vector2Int(-1, -1),
+                new Vector2Int(0, 2),
+                new Vector2Int(-1, 2)
+            };
+        }
+
+        return GetFallbackKickOffsets();
+    }
+
+    private static Vector2Int[] GetIKickOffsets(int fromState, int toState)
+    {
+        if ((fromState == 0 && toState == 1) || (fromState == 3 && toState == 2))
+        {
+            return new[]
+            {
+                new Vector2Int(0, 0),
+                new Vector2Int(-2, 0),
+                new Vector2Int(1, 0),
+                new Vector2Int(-2, -1),
+                new Vector2Int(1, 2)
+            };
+        }
+
+        if ((fromState == 1 && toState == 0) || (fromState == 2 && toState == 3))
+        {
+            return new[]
+            {
+                new Vector2Int(0, 0),
+                new Vector2Int(2, 0),
+                new Vector2Int(-1, 0),
+                new Vector2Int(2, 1),
+                new Vector2Int(-1, -2)
+            };
+        }
+
+        if ((fromState == 1 && toState == 2) || (fromState == 0 && toState == 3))
+        {
+            return new[]
+            {
+                new Vector2Int(0, 0),
+                new Vector2Int(-1, 0),
+                new Vector2Int(2, 0),
+                new Vector2Int(-1, 2),
+                new Vector2Int(2, -1)
+            };
+        }
+
+        if ((fromState == 2 && toState == 1) || (fromState == 3 && toState == 0))
+        {
+            return new[]
+            {
+                new Vector2Int(0, 0),
+                new Vector2Int(1, 0),
+                new Vector2Int(-2, 0),
+                new Vector2Int(1, -2),
+                new Vector2Int(-2, 1)
+            };
+        }
+
+        return GetFallbackKickOffsets();
+    }
+
+    private static Vector2Int[] GetFallbackKickOffsets()
+    {
+        return new[]
+        {
+            new Vector2Int(0, 0),
+            new Vector2Int(1, 0),
+            new Vector2Int(-1, 0),
+            new Vector2Int(0, 1),
+            new Vector2Int(0, -1)
+        };
+    }
+
     private void NotifyStateChanged()
     {
         StateChanged?.Invoke();
@@ -1184,6 +1452,8 @@ public class ActivePieceController : MonoBehaviour
             Destroy(activePiece);
             activePiece = null;
         }
+
+        activeRotationState = 0;
 
         activeRenderers.Clear();
 

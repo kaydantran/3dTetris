@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.UI;
 
 /// <summary>
 /// Simple progression and game-state coordinator. It tracks cleared layers for score/speed
@@ -37,7 +38,14 @@ public class GameMaster : MonoBehaviour
 
         if (FindAnyObjectByType<GameplayHudController>() == null)
         {
-            new GameObject("GameplayHUD").AddComponent<GameplayHudController>();
+            GameObject hudObject = new GameObject(
+                "GameplayHUD",
+                typeof(RectTransform),
+                typeof(Canvas),
+                typeof(CanvasScaler),
+                typeof(GraphicRaycaster));
+
+            hudObject.AddComponent<GameplayHudController>();
         }
     }
 

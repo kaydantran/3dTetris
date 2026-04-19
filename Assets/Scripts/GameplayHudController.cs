@@ -31,6 +31,7 @@ public class GameplayHudController : MonoBehaviour
     [SerializeField] private GameMaster gameMaster;
 
     private Canvas canvas;
+    private RectTransform hudRoot;
     private Font uiFont;
     private Text linesValueText;
     private Text piecesPerSecondValueText;
@@ -43,23 +44,21 @@ public class GameplayHudController : MonoBehaviour
     private void Awake()
     {
         ResolveReferences();
-        if (pieceController == null || gameMaster == null)
-        {
-            enabled = false;
-            return;
-        }
-
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
 
         EnsureEventSystem();
-        BuildUi();
+        EnsureUi();
+        BindEvents();
     }
 
     private void OnEnable()
     {
         ResolveReferences();
+        EnsureEventSystem();
+        EnsureUi();
         BindEvents();
+        RefreshAll();
     }
 
     private void Start()
@@ -69,12 +68,46 @@ public class GameplayHudController : MonoBehaviour
 
     private void Update()
     {
+        if (!isBound)
+        {
+            ResolveReferences();
+            BindEvents();
+        }
+
         RefreshPiecesPerSecond();
     }
 
     private void OnDisable()
     {
         UnbindEvents();
+    }
+
+    private void EnsureUi()
+    {
+        BuildUi();
+
+        if (canvas != null)
+        {
+            canvas.enabled = true;
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = 200;
+        }
+
+        RectTransform canvasRect = transform as RectTransform;
+        if (canvasRect != null)
+        {
+            canvasRect.anchorMin = Vector2.zero;
+            canvasRect.anchorMax = Vector2.one;
+            canvasRect.offsetMin = Vector2.zero;
+            canvasRect.offsetMax = Vector2.zero;
+            canvasRect.localScale = Vector3.one;
+        }
+
+        if (hudRoot != null)
+        {
+            Stretch(hudRoot);
+            hudRoot.SetAsLastSibling();
+        }
     }
 
     private void ResolveReferences()
@@ -129,7 +162,7 @@ public class GameplayHudController : MonoBehaviour
 
     private void BuildUi()
     {
-        if (canvas != null) return;
+        if (canvas != null && hudRoot != null) return;
 
         uiFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
 
@@ -157,12 +190,17 @@ public class GameplayHudController : MonoBehaviour
             gameObject.AddComponent<GraphicRaycaster>();
         }
 
-        RectTransform root = CreateUiObject("HudRoot", transform);
-        Stretch(root);
+        if (hudRoot != null)
+        {
+            return;
+        }
 
-        RectTransform holdPanel = CreatePanel("HoldPanel", root, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(24f, -24f), new Vector2(220f, 250f));
-        RectTransform statsPanel = CreatePanel("StatsPanel", root, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -24f), new Vector2(360f, 250f));
-        RectTransform nextPanel = CreatePanel("NextPanel", root, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-24f, -24f), new Vector2(220f, 640f));
+        hudRoot = CreateUiObject("HudRoot", transform);
+        Stretch(hudRoot);
+
+        RectTransform holdPanel = CreatePanel("HoldPanel", hudRoot, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(24f, -24f), new Vector2(220f, 250f));
+        RectTransform statsPanel = CreatePanel("StatsPanel", hudRoot, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -24f), new Vector2(360f, 250f));
+        RectTransform nextPanel = CreatePanel("NextPanel", hudRoot, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-24f, -24f), new Vector2(220f, 640f));
 
         BuildHoldPanel(holdPanel);
         BuildStatsPanel(statsPanel);
@@ -550,9 +588,10 @@ public class GameplayHudController : MonoBehaviour
 
         public void SetPiece(string pieceCode)
         {
-            PreviewDefinition definition;
-            bool hasDefinition = !string.IsNullOrWhiteSpace(pieceCode) && PreviewDefinitions.TryGetValue(pieceCode.Trim(), out definition);
-            string label = hasDefinition ? pieceCode.Trim().ToUpperInvariant() : "EMPTY";
+            string normalizedCode = string.IsNullOrWhiteSpace(pieceCode) ? string.Empty : pieceCode.Trim().ToUpperInvariant();
+            PreviewDefinition definition = default;
+            bool hasDefinition = normalizedCode.Length > 0 && PreviewDefinitions.TryGetValue(normalizedCode, out definition);
+            string label = hasDefinition ? normalizedCode : "EMPTY";
             pieceCodeLabel.text = label;
 
             backgroundImage.color = hasDefinition
