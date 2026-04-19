@@ -1,10 +1,8 @@
 using UnityEngine;
 
 /// <summary>
-/// Click-and-drag orbit camera. The camera stays focused on a target point (typically the
-/// TetrisGrid's center) and lets the player rotate around it like a globe by dragging the
-/// mouse. Scroll wheel zooms. All axes are clamped to reasonable bounds so the camera
-/// never flips under the floor or ends up inside the playfield.
+/// Click-and-drag orbit camera. The camera stays focused on a target point and also exposes
+/// snap helpers for face-to-face view changes driven by gameplay input.
 /// </summary>
 public class OrbitCamera : MonoBehaviour
 {
@@ -35,7 +33,11 @@ public class OrbitCamera : MonoBehaviour
     [Tooltip("Which mouse button initiates drag-to-rotate. 0=Left, 1=Right, 2=Middle.")]
     [SerializeField] private int dragMouseButton = 0;
 
-    // Current and target spherical angles (degrees).
+    [Header("Snapped Face Views")]
+    [SerializeField] private float faceYawStep = 90f;
+    [SerializeField] private float flatFacePitch = 0f;
+    [SerializeField] private float elevatedFacePitch = 45f;
+
     private float yaw = 35f;
     private float pitch = 25f;
     private float targetYaw;
@@ -44,9 +46,19 @@ public class OrbitCamera : MonoBehaviour
 
     private Vector3 targetPoint;
 
+    private void Awake()
+    {
+        if (grid == null)
+        {
+            grid = FindAnyObjectByType<TetrisGrid>();
+        }
+    }
+
     private void Start()
     {
-        targetYaw = yaw;
+        yaw = 0f;
+        targetYaw = 0f;
+        pitch = Mathf.Clamp(elevatedFacePitch, pitchLimits.x, pitchLimits.y);
         targetPitch = pitch;
         targetDistance = distance;
         ResolveTargetPoint();
@@ -56,51 +68,85 @@ public class OrbitCamera : MonoBehaviour
     private void LateUpdate()
     {
         ResolveTargetPoint();
-        HandleMouseInput();
+        HandleInput();
         SmoothTransform();
     }
 
     private void ResolveTargetPoint()
     {
-        if (target != null) { targetPoint = target.position; return; }
-        if (grid   != null) { targetPoint = grid.Center;     return; }
-        // Fallback: world origin.
+        if (target != null)
+        {
+            targetPoint = target.position;
+            return;
+        }
+
+        if (grid != null)
+        {
+            targetPoint = grid.Center;
+            return;
+        }
+
         targetPoint = Vector3.zero;
     }
 
-    private void HandleMouseInput()
+    private void HandleInput()
     {
-        // Orbit on drag.
         if (Input.GetMouseButton(dragMouseButton))
         {
             float dx = Input.GetAxis("Mouse X");
             float dy = Input.GetAxis("Mouse Y");
-            // Mouse axes are already frame-rate independent; scale by rotationSpeed and a constant.
-            targetYaw   += dx * rotationSpeed * 60f;
+            targetYaw += dx * rotationSpeed * 60f;
             targetPitch -= dy * rotationSpeed * 60f;
             targetPitch = Mathf.Clamp(targetPitch, pitchLimits.x, pitchLimits.y);
         }
 
-        // Zoom on scroll.
         float scroll = Input.GetAxis("Mouse ScrollWheel");
         if (Mathf.Abs(scroll) > 0.0001f)
         {
-            targetDistance = Mathf.Clamp(targetDistance - scroll * zoomSpeed * 10f,
-                                         minDistance, maxDistance);
+            targetDistance = Mathf.Clamp(targetDistance - scroll * zoomSpeed * 10f, minDistance, maxDistance);
         }
+    }
+
+    public void RotateToLeftFace()
+    {
+        targetYaw = GetNearestFaceYaw(targetYaw) - faceYawStep;
+    }
+
+    public void RotateToRightFace()
+    {
+        targetYaw = GetNearestFaceYaw(targetYaw) + faceYawStep;
+    }
+
+    public void SetElevatedFaceView()
+    {
+        targetYaw = GetNearestFaceYaw(targetYaw);
+        targetPitch = Mathf.Clamp(elevatedFacePitch, pitchLimits.x, pitchLimits.y);
+    }
+
+    public void SetFlatFaceView()
+    {
+        targetYaw = GetNearestFaceYaw(targetYaw);
+        targetPitch = Mathf.Clamp(flatFacePitch, pitchLimits.x, pitchLimits.y);
+    }
+
+    private float GetNearestFaceYaw(float sourceYaw)
+    {
+        return Mathf.Round(sourceYaw / faceYawStep) * faceYawStep;
     }
 
     private void SmoothTransform()
     {
         if (smoothing <= 0f)
         {
-            yaw = targetYaw; pitch = targetPitch; distance = targetDistance;
+            yaw = targetYaw;
+            pitch = targetPitch;
+            distance = targetDistance;
         }
         else
         {
-            float t = 1f - Mathf.Exp(-smoothing * Time.deltaTime); // framerate-independent lerp
-            yaw      = Mathf.LerpAngle(yaw, targetYaw, t);
-            pitch    = Mathf.Lerp(pitch, targetPitch, t);
+            float t = 1f - Mathf.Exp(-smoothing * Time.deltaTime);
+            yaw = Mathf.LerpAngle(yaw, targetYaw, t);
+            pitch = Mathf.Lerp(pitch, targetPitch, t);
             distance = Mathf.Lerp(distance, targetDistance, t);
         }
 

@@ -151,6 +151,12 @@ MonoBehaviour:
   width: 7
   depth: 7
   height: 10
+  topBoundaryY: -1
+  showRuntimeBoundaryVisuals: 1
+  boundaryColor: {r: 0.25, g: 0.75, b: 1, a: 0.75}
+  floorGridColor: {r: 0.25, g: 0.75, b: 1, a: 0.18}
+  topBoundaryColor: {r: 1, g: 0.35, b: 0.35, a: 0.95}
+  boundaryLineWidth: 0.05
   drawGizmos: 1
 --- !u!4 &738961777
 Transform:
@@ -283,6 +289,11 @@ MonoBehaviour:
   zoomSpeed: 4
   smoothing: 12
   dragMouseButton: 0
+  keyboardYawStep: 90
+  rotateLeftKey: 97
+  rotateRightKey: 100
+  alternateRotateLeftKey: 91
+  alternateRotateRightKey: 93
 --- !u!114 &1206521279
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -485,12 +496,17 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ActivePieceController
   grid: {fileID: 738961776}
+  orbitCamera: {fileID: 0}
+  gameMaster: {fileID: 0}
+  gameplayCamera: {fileID: 0}
   piecePrefabs:
   - {fileID: 1334546993186979755, guid: 30b0d2ac18be64f12972368be36870bb, type: 3}
   - {fileID: 8383174646191267507, guid: 6f3f9a55edb0f4ebd92e797c0e48fa2b, type: 3}
   - {fileID: 3685248172575348425, guid: f5d28b5e94424492c82bce8969ef8f3f, type: 3}
   - {fileID: 2054118187433653220, guid: 1db64c02f158f40878de136821c1337c, type: 3}
   - {fileID: 8655858587352886489, guid: 45676643bdcc54f2db7522e50dc45c64, type: 3}
+  - {fileID: 6493851677052744614, guid: 40a44f1a3bbc4425ba1f2cca3129287c, type: 3}
+  - {fileID: 2287015678945164085, guid: 43d7ba5de88a0423fb19cfe66033cde3, type: 3}
   pieceMaterials:
   - {fileID: 2100000, guid: 2452f4568f8eb4ac5a494dfe2c4678bf, type: 2}
   - {fileID: 2100000, guid: bb0474999857d4e28a05a4ba1f5cc150, type: 2}
@@ -499,6 +515,8 @@ MonoBehaviour:
   - {fileID: 2100000, guid: 8b463b4ec3b714d418b2484c1848aa6a, type: 2}
   - {fileID: 2100000, guid: 3d8e7c9220bed45cf978865d0bde5381, type: 2}
   ghostMaterial: {fileID: 2100000, guid: 6dbe8dc8b69b54a9780e2c0201052015, type: 2}
+  delayedAutoShift: 0.16
+  autoRepeatRate: 0.05
   initialDropInterval: 1
   minDropInterval: 0.05
   speedIncreaseFactor: 0.85
@@ -506,6 +524,17 @@ MonoBehaviour:
   baseLockDelay: 0.5
   maxLockResets: 15
   spawnHeightOffset: 2
+  rotateXKey: 101
+  rotateZKey: 114
+  rotate180Key: 102
+  holdKey: 119
+  moveBackKey: 115
+  showRotationIndicators: 1
+  xRotationIndicatorColor: {r: 1, g: 0.55, b: 0.35, a: 0.95}
+  zRotationIndicatorColor: {r: 0.35, g: 0.9, b: 1, a: 0.95}
+  rotate180IndicatorColor: {r: 1, g: 0.95, b: 0.35, a: 0.95}
+  rotationIndicatorHeightOffset: 0.6
+  rotationIndicatorPadding: 0.45
 --- !u!114 &1790465953
 MonoBehaviour:
   m_ObjectHideFlags: 0
