@@ -262,13 +262,13 @@ public class ActivePieceController : MonoBehaviour
 
         if (Input.GetKeyDown(rotateCounterClockwiseKey))
         {
-            orbitCamera.RotateToLeftFace();
+            orbitCamera.RotateToRightFace();
             return true;
         }
 
         if (Input.GetKeyDown(rotateClockwiseKey))
         {
-            orbitCamera.RotateToRightFace();
+            orbitCamera.RotateToLeftFace();
             return true;
         }
 

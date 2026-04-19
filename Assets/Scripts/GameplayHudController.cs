@@ -40,6 +40,8 @@ public class GameplayHudController : MonoBehaviour
     private PiecePreviewWidget holdPreviewWidget;
     private readonly List<PiecePreviewWidget> nextPreviewWidgets = new List<PiecePreviewWidget>();
     private bool isBound;
+    private const string PreferredBuiltinFontPath = "LegacyRuntime.ttf";
+    private const string FallbackBuiltinFontPath = "Arial.ttf";
 
     private void Awake()
     {
@@ -164,7 +166,7 @@ public class GameplayHudController : MonoBehaviour
     {
         if (canvas != null && hudRoot != null) return;
 
-        uiFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        uiFont = LoadBuiltinFont();
 
         canvas = gameObject.GetComponent<Canvas>();
         if (canvas == null)
@@ -509,6 +511,25 @@ public class GameplayHudController : MonoBehaviour
         rectTransform.anchorMax = Vector2.one;
         rectTransform.offsetMin = new Vector2(left, bottom);
         rectTransform.offsetMax = new Vector2(-right, -top);
+    }
+
+    private static Font LoadBuiltinFont()
+    {
+        try
+        {
+            return Resources.GetBuiltinResource<Font>(PreferredBuiltinFontPath);
+        }
+        catch (ArgumentException)
+        {
+            try
+            {
+                return Resources.GetBuiltinResource<Font>(FallbackBuiltinFontPath);
+            }
+            catch (ArgumentException)
+            {
+                return Font.CreateDynamicFontFromOSFont(new[] { "Arial", "Helvetica", "Verdana" }, 16);
+            }
+        }
     }
 
     private readonly struct PreviewDefinition

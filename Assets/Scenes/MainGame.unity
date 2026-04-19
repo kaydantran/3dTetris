@@ -495,9 +495,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ActivePieceController
   grid: {fileID: 738961776}
-  orbitCamera: {fileID: 0}
-  gameMaster: {fileID: 0}
-  gameplayCamera: {fileID: 0}
+  orbitCamera: {fileID: 1206521278}
+  gameMaster: {fileID: 1790465953}
+  gameplayCamera: {fileID: 1206521276}
   piecePrefabs:
   - {fileID: 1334546993186979755, guid: 30b0d2ac18be64f12972368be36870bb, type: 3}
   - {fileID: 8383174646191267507, guid: 6f3f9a55edb0f4ebd92e797c0e48fa2b, type: 3}

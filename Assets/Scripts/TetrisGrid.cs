@@ -36,6 +36,7 @@ public class TetrisGrid : MonoBehaviour
     private Transform[,,] cells;
     private GameObject boundaryVisualRoot;
     private Material runtimeLineMaterial;
+    private bool runtimeBoundaryVisualsDirty;
 
     public int Width => width;
     public int Depth => depth;
@@ -48,7 +49,17 @@ public class TetrisGrid : MonoBehaviour
     private void Awake()
     {
         EnsureCellArray();
-        RebuildRuntimeBoundaryVisuals();
+        runtimeBoundaryVisualsDirty = true;
+    }
+
+    private void Start()
+    {
+        RefreshRuntimeBoundaryVisualsIfNeeded();
+    }
+
+    private void LateUpdate()
+    {
+        RefreshRuntimeBoundaryVisualsIfNeeded();
     }
 
     private void OnDestroy()
@@ -73,8 +84,16 @@ public class TetrisGrid : MonoBehaviour
         if (Application.isPlaying)
         {
             EnsureCellArray();
-            RebuildRuntimeBoundaryVisuals();
+            runtimeBoundaryVisualsDirty = true;
         }
+    }
+
+    private void RefreshRuntimeBoundaryVisualsIfNeeded()
+    {
+        if (!runtimeBoundaryVisualsDirty) return;
+
+        runtimeBoundaryVisualsDirty = false;
+        RebuildRuntimeBoundaryVisuals();
     }
 
     private void EnsureCellArray()
