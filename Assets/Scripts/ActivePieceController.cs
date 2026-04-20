@@ -30,6 +30,12 @@ public class ActivePieceController : MonoBehaviour
     [Tooltip("Opacity of the ghost silhouette after tinting.")]
     [SerializeField, Range(0f, 1f)] private float ghostOpacity = 0.18f;
 
+    [Header("Audio")]
+    [SerializeField] private AudioClip placeBlockSound;
+    [SerializeField] private AudioClip clearSound;
+    [SerializeField, Range(0f, 1f)] private float placeBlockVolume = 0.75f;
+    [SerializeField, Range(0f, 1f)] private float clearVolume = 0.85f;
+
     [Header("Movement Feel")]
     [Tooltip("How long a held move key waits before it starts repeating.")]
     public float delayedAutoShift = 0.16f;
@@ -122,6 +128,7 @@ public class ActivePieceController : MonoBehaviour
     private readonly List<TextMesh> indicatorLabels = new List<TextMesh>();
     private readonly List<LineRenderer> dropTrailLines = new List<LineRenderer>();
     private MaterialPropertyBlock flashBlock;
+    private AudioSource effectsAudioSource;
 
     private HeldMoveState[] moveStates;
     private Material indicatorLineMaterial;
@@ -149,6 +156,7 @@ public class ActivePieceController : MonoBehaviour
         RebuildMoveStates();
 
         currentDropInterval = initialDropInterval;
+        EnsureEffectsAudioSource();
     }
 
     private void OnValidate()
@@ -711,6 +719,31 @@ public class ActivePieceController : MonoBehaviour
         return Color.white;
     }
 
+    private void EnsureEffectsAudioSource()
+    {
+        if (effectsAudioSource != null) return;
+
+        effectsAudioSource = GetComponent<AudioSource>();
+        if (effectsAudioSource == null)
+        {
+            effectsAudioSource = gameObject.AddComponent<AudioSource>();
+        }
+
+        effectsAudioSource.playOnAwake = false;
+        effectsAudioSource.spatialBlend = 0f;
+        effectsAudioSource.loop = false;
+    }
+
+    private void PlaySound(AudioClip clip, float volume)
+    {
+        if (clip == null) return;
+
+        EnsureEffectsAudioSource();
+        if (effectsAudioSource == null) return;
+
+        effectsAudioSource.PlayOneShot(clip, Mathf.Clamp01(volume));
+    }
+
     private void LockPieceNow()
     {
         if (activePiece == null) return;
@@ -720,6 +753,7 @@ public class ActivePieceController : MonoBehaviour
         ClearFlashState();
 
         GridLockResult lockResult = grid.LockPiece(activePiece.transform);
+        PlaySound(placeBlockSound, placeBlockVolume);
         activePiece = null;
         activeRenderers.Clear();
         DestroyGhost();
@@ -761,6 +795,7 @@ public class ActivePieceController : MonoBehaviour
     {
         if (clearedCount <= 0) return;
 
+        PlaySound(clearSound, clearVolume);
         orbitCamera?.PlayLayerClearImpact();
         gameMaster?.OnLayersCleared(clearedCount);
     }

@@ -509,6 +509,10 @@ MonoBehaviour:
   ghostMaterial: {fileID: 2100000, guid: 6dbe8dc8b69b54a9780e2c0201052015, type: 2}
   ghostTintStrength: 0.2
   ghostOpacity: 0.18
+  placeBlockSound: {fileID: 8300000, guid: 46b8f25449c964332be00c8fcbaf426e, type: 3}
+  clearSound: {fileID: 8300000, guid: 283abbdf20c7b48829f728ef0b274d9d, type: 3}
+  placeBlockVolume: 0.75
+  clearVolume: 0.85
   delayedAutoShift: 0.16
   autoRepeatRate: 0.05
   initialDropInterval: 1
