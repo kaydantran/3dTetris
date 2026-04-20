@@ -158,6 +158,9 @@ MonoBehaviour:
   topBoundaryColor: {r: 1, g: 0.35, b: 0.35, a: 0.95}
   boundaryLineWidth: 0.05
   drawGizmos: 1
+  comboGravityFallSpeed: 14
+  clearPause: 0.05
+  settlePause: 0.03
 --- !u!4 &738961777
 Transform:
   m_ObjectHideFlags: 0
@@ -293,6 +296,10 @@ MonoBehaviour:
   flatFacePitch: 0
   elevatedFacePitch: 45
   topDownFacePitch: 90
+  clearShakeDistance: 0.16
+  clearShakeDuration: 0.14
+  clearShakeFrequency: 28
+  clearShakeRollDegrees: 0.8
 --- !u!114 &1206521279
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -511,8 +518,8 @@ MonoBehaviour:
   ghostOpacity: 0.18
   placeBlockSound: {fileID: 8300000, guid: 46b8f25449c964332be00c8fcbaf426e, type: 3}
   clearSound: {fileID: 8300000, guid: 283abbdf20c7b48829f728ef0b274d9d, type: 3}
-  placeBlockVolume: 0.75
-  clearVolume: 0.85
+  placeBlockVolume: 0.85
+  clearVolume: 0.75
   delayedAutoShift: 0.16
   autoRepeatRate: 0.05
   initialDropInterval: 1
@@ -542,6 +549,16 @@ MonoBehaviour:
   downwardRotationIndicatorColor: {r: 1, g: 0.7, b: 0.35, a: 0.95}
   rotationIndicatorHeightOffset: 0.6
   rotationIndicatorPadding: 0.45
+  showVerticalDropTrails: 1
+  dropTrailColor: {r: 0.35, g: 0.9, b: 1, a: 0.42}
+  dropTrailInnerWidth: 0.045
+  dropTrailOuterWidth: 0.12
+  dropTrailCornerInset: 0.08
+  showHardDropTrail: 1
+  hardDropTrailColor: {r: 1, g: 1, b: 1, a: 0.75}
+  hardDropTrailInnerWidth: 0.08
+  hardDropTrailOuterWidth: 0.18
+  hardDropTrailDuration: 0.14
 --- !u!114 &1790465953
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -3,6 +3,9 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 /// <summary>
 /// Drives the currently falling piece: input, gravity, lock delay, hold/swap, 7-bag spawning,
@@ -35,6 +38,8 @@ public class ActivePieceController : MonoBehaviour
     [SerializeField] private AudioClip clearSound;
     [SerializeField, Range(0f, 1f)] private float placeBlockVolume = 0.75f;
     [SerializeField, Range(0f, 1f)] private float clearVolume = 0.85f;
+    [SerializeField] private KeyCode debugPlaceSoundKey = KeyCode.F8;
+    [SerializeField] private KeyCode debugClearSoundKey = KeyCode.F9;
 
     [Header("Movement Feel")]
     [Tooltip("How long a held move key waits before it starts repeating.")]
@@ -156,13 +161,17 @@ public class ActivePieceController : MonoBehaviour
         RebuildMoveStates();
 
         currentDropInterval = initialDropInterval;
+        ResolveAudioClips();
         EnsureEffectsAudioSource();
+        PrepareClipForPlayback(placeBlockSound);
+        PrepareClipForPlayback(clearSound);
     }
 
     private void OnValidate()
     {
         ApplyControlDefaults();
         RebuildMoveStates();
+        ResolveAudioClips();
     }
 
     private void Start()
@@ -201,6 +210,8 @@ public class ActivePieceController : MonoBehaviour
 
     private void Update()
     {
+        HandleDebugAudioHotkeys();
+
         if (activePiece == null) return;
 
         HandleInput();
@@ -286,6 +297,21 @@ public class ActivePieceController : MonoBehaviour
         }
 
         HandleRepeatingMovement();
+    }
+
+    private void HandleDebugAudioHotkeys()
+    {
+        if (Input.GetKeyDown(debugPlaceSoundKey))
+        {
+            ResolveAudioClips();
+            PlaySound(placeBlockSound, placeBlockVolume);
+        }
+
+        if (Input.GetKeyDown(debugClearSoundKey))
+        {
+            ResolveAudioClips();
+            PlaySound(clearSound, clearVolume);
+        }
     }
 
     private bool HandleCameraModifierInput()
@@ -738,10 +764,88 @@ public class ActivePieceController : MonoBehaviour
     {
         if (clip == null) return;
 
-        EnsureEffectsAudioSource();
-        if (effectsAudioSource == null) return;
+        if (!PrepareClipForPlayback(clip))
+        {
+            StartCoroutine(PlaySoundWhenReady(clip, Mathf.Clamp01(volume)));
+            return;
+        }
 
-        effectsAudioSource.PlayOneShot(clip, Mathf.Clamp01(volume));
+        PlaySoundImmediate(clip, Mathf.Clamp01(volume));
+    }
+
+    private IEnumerator PlaySoundWhenReady(AudioClip clip, float volume)
+    {
+        if (clip == null) yield break;
+
+        const float timeoutSeconds = 2f;
+        float elapsed = 0f;
+
+        while (elapsed < timeoutSeconds)
+        {
+            if (PrepareClipForPlayback(clip))
+            {
+                PlaySoundImmediate(clip, volume);
+                yield break;
+            }
+
+            elapsed += Time.unscaledDeltaTime;
+            yield return null;
+        }
+    }
+
+    private static bool PrepareClipForPlayback(AudioClip clip)
+    {
+        if (clip == null) return false;
+
+        if (clip.loadState == AudioDataLoadState.Unloaded)
+        {
+            clip.LoadAudioData();
+            return false;
+        }
+
+        if (clip.loadState == AudioDataLoadState.Loading)
+        {
+            return false;
+        }
+
+        return clip.loadState == AudioDataLoadState.Loaded;
+    }
+
+    private void PlaySoundImmediate(AudioClip clip, float volume)
+    {
+        if (clip == null) return;
+
+        Vector3 emitterPosition = gameplayCamera != null
+            ? gameplayCamera.transform.position
+            : (Camera.main != null ? Camera.main.transform.position : transform.position);
+
+        GameObject emitter = new GameObject($"SFX_{clip.name}");
+        emitter.transform.position = emitterPosition;
+
+        AudioSource source = emitter.AddComponent<AudioSource>();
+        source.clip = clip;
+        source.volume = volume;
+        source.spatialBlend = 0f;
+        source.playOnAwake = false;
+        source.loop = false;
+        source.Play();
+
+        Destroy(emitter, Mathf.Max(0.1f, clip.length + 0.1f));
+    }
+
+    private void ResolveAudioClips()
+    {
+#if UNITY_EDITOR
+        if (placeBlockSound == null)
+        {
+            placeBlockSound = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Sounds/placeBlock.mp3");
+        }
+
+        if (clearSound == null)
+        {
+            clearSound = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Sounds/clear.mp3");
+        }
+#endif
     }
 
     private void LockPieceNow()
@@ -753,6 +857,7 @@ public class ActivePieceController : MonoBehaviour
         ClearFlashState();
 
         GridLockResult lockResult = grid.LockPiece(activePiece.transform);
+        ResolveAudioClips();
         PlaySound(placeBlockSound, placeBlockVolume);
         activePiece = null;
         activeRenderers.Clear();
@@ -795,6 +900,7 @@ public class ActivePieceController : MonoBehaviour
     {
         if (clearedCount <= 0) return;
 
+        ResolveAudioClips();
         PlaySound(clearSound, clearVolume);
         orbitCamera?.PlayLayerClearImpact();
         gameMaster?.OnLayersCleared(clearedCount);
