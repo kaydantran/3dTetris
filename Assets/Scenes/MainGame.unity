@@ -148,9 +148,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0c336521bba274890942d9a083903f89, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TetrisGrid
-  width: 10
-  depth: 10
-  height: 20
+  width: 8
+  depth: 8
+  height: 16
   topBoundaryY: -1
   showRuntimeBoundaryVisuals: 1
   boundaryColor: {r: 0.25, g: 0.75, b: 1, a: 0.75}
@@ -520,6 +520,8 @@ MonoBehaviour:
   clearSound: {fileID: 8300000, guid: 283abbdf20c7b48829f728ef0b274d9d, type: 3}
   placeBlockVolume: 0.85
   clearVolume: 0.75
+  debugPlaceSoundKey: 56
+  debugClearSoundKey: 57
   delayedAutoShift: 0.16
   autoRepeatRate: 0.05
   initialDropInterval: 1
