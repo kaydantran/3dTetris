@@ -372,12 +372,6 @@ public class ActivePieceController : MonoBehaviour
 
     private bool TryRotateOnViewedPlane(float angle)
     {
-        if (string.Equals(GetActivePieceCode(), "O", StringComparison.Ordinal))
-        {
-            // Keep face-view spins on O as a no-op, but still allow U/N to tilt it into depth.
-            return true;
-        }
-
         Vector3 axis = GetCameraRelativeForward();
         return TryRotate(axis, angle);
     }
