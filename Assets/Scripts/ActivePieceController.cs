@@ -80,9 +80,24 @@ public class ActivePieceController : MonoBehaviour
     [SerializeField] private float rotationIndicatorHeightOffset = 0.6f;
     [SerializeField] private float rotationIndicatorPadding = 0.45f;
 
+    [Header("Vertical Drop Trails")]
+    [SerializeField] private bool showVerticalDropTrails = true;
+    [SerializeField] private Color dropTrailColor = new Color(0.35f, 0.9f, 1f, 0.42f);
+    [SerializeField] private float dropTrailInnerWidth = 0.045f;
+    [SerializeField] private float dropTrailOuterWidth = 0.12f;
+    [SerializeField] private float dropTrailCornerInset = 0.08f;
+
+    [Header("Hard Drop Trail")]
+    [SerializeField] private bool showHardDropTrail = true;
+    [SerializeField] private Color hardDropTrailColor = new Color(1f, 1f, 1f, 0.75f);
+    [SerializeField] private float hardDropTrailInnerWidth = 0.08f;
+    [SerializeField] private float hardDropTrailOuterWidth = 0.18f;
+    [SerializeField] private float hardDropTrailDuration = 0.14f;
+
     private GameObject activePiece;
     private GameObject ghostPiece;
     private GameObject rotationIndicatorRoot;
+    private GameObject dropTrailRoot;
 
     private bool hasHeldPiece;
     private PieceIdentity heldPieceIdentity;
@@ -101,9 +116,11 @@ public class ActivePieceController : MonoBehaviour
     private float lockTimer;
     private int lockResetCount;
     private Coroutine flashRoutine;
+    private Coroutine postLockRoutine;
 
     private readonly List<Renderer> activeRenderers = new List<Renderer>();
     private readonly List<TextMesh> indicatorLabels = new List<TextMesh>();
+    private readonly List<LineRenderer> dropTrailLines = new List<LineRenderer>();
     private MaterialPropertyBlock flashBlock;
 
     private HeldMoveState[] moveStates;
@@ -181,13 +198,21 @@ public class ActivePieceController : MonoBehaviour
         HandleInput();
         HandleGravity();
         UpdateGhost();
+        UpdateDropTrails();
         UpdateRotationIndicators();
     }
 
     private void OnDisable()
     {
+        if (postLockRoutine != null)
+        {
+            StopCoroutine(postLockRoutine);
+            postLockRoutine = null;
+        }
+
         CancelLockDelay();
         DestroyGhost();
+        DestroyDropTrails();
         DestroyRotationIndicators();
     }
 
@@ -698,6 +723,7 @@ public class ActivePieceController : MonoBehaviour
         activePiece = null;
         activeRenderers.Clear();
         DestroyGhost();
+        DestroyDropTrails();
         DestroyRotationIndicators();
 
         if (gameMaster != null)
@@ -705,19 +731,38 @@ public class ActivePieceController : MonoBehaviour
             gameMaster.OnPieceLocked();
         }
 
-        int cleared = grid.CheckAndClearLayers(lockResult.TouchedLayers);
-        if (cleared > 0 && gameMaster != null)
+        if (postLockRoutine != null)
         {
-            gameMaster.OnLayersCleared(cleared);
+            StopCoroutine(postLockRoutine);
         }
+
+        postLockRoutine = StartCoroutine(ResolveLockedPiece(lockResult));
+    }
+
+    private IEnumerator ResolveLockedPiece(GridLockResult lockResult)
+    {
+        if (grid != null)
+        {
+            yield return StartCoroutine(grid.CheckAndClearLayersAnimated(lockResult.TouchedLayers, OnLayersClearedResolved));
+        }
+
+        postLockRoutine = null;
 
         if (lockResult.CrossedTopBoundary)
         {
             GameOver();
-            return;
+            yield break;
         }
 
         SpawnNextBagPiece();
+    }
+
+    private void OnLayersClearedResolved(int clearedCount)
+    {
+        if (clearedCount <= 0) return;
+
+        orbitCamera?.PlayLayerClearImpact();
+        gameMaster?.OnLayersCleared(clearedCount);
     }
 
     // ---------------------------------------------------------------------
@@ -728,9 +773,18 @@ public class ActivePieceController : MonoBehaviour
     {
         if (activePiece == null) return;
 
+        Vector3[] startCubePositions = showHardDropTrail ? GetActiveCubeWorldPositions() : null;
+        int droppedCells = 0;
+
         while (grid.IsValidPosition(activePiece.transform, activePiece.transform.position + Vector3.down, activePiece.transform.rotation))
         {
             activePiece.transform.position += Vector3.down;
+            droppedCells++;
+        }
+
+        if (droppedCells > 0 && showHardDropTrail)
+        {
+            SpawnHardDropTrail(startCubePositions, GetActiveCubeWorldPositions());
         }
 
         CancelLockDelay();
@@ -857,6 +911,7 @@ public class ActivePieceController : MonoBehaviour
     {
         CancelLockDelay();
         DestroyGhost();
+        DestroyDropTrails();
         DestroyRotationIndicators();
         activeRenderers.Clear();
 
@@ -961,8 +1016,10 @@ public class ActivePieceController : MonoBehaviour
         dropTimer = 0f;
         CancelLockDelay();
         BuildGhost();
+        BuildDropTrails();
         BuildRotationIndicators();
         UpdateGhost();
+        UpdateDropTrails();
         UpdateRotationIndicators();
         NotifyStateChanged();
     }
@@ -1056,6 +1113,215 @@ public class ActivePieceController : MonoBehaviour
         }
     }
 
+    private void BuildDropTrails()
+    {
+        DestroyDropTrails();
+
+        if (!showVerticalDropTrails || activePiece == null) return;
+
+        dropTrailRoot = new GameObject("VerticalDropTrails");
+    }
+
+    private void UpdateDropTrails()
+    {
+        if (dropTrailRoot == null || activePiece == null) return;
+
+        List<Vector3> anchors = GetDropTrailAnchors();
+        EnsureDropTrailLineCount(anchors.Count * 2);
+
+        Color trailTint = GetDropTrailTint();
+
+        for (int i = 0; i < anchors.Count; i++)
+        {
+            Vector3 start = anchors[i] + Vector3.down * 0.04f;
+            float supportY = grid != null ? grid.GetSupportSurfaceWorldY(anchors[i]) : start.y - 1f;
+            Vector3 end = new Vector3(start.x, supportY + 0.03f, start.z);
+            bool visible = start.y - end.y > 0.02f;
+
+            UpdateDropTrailRenderer(dropTrailLines[i * 2], start, end, trailTint, 0.16f, 0.02f, visible);
+            UpdateDropTrailRenderer(dropTrailLines[i * 2 + 1], start, end, trailTint, 0.92f, 0.18f, visible);
+        }
+
+        for (int i = anchors.Count * 2; i < dropTrailLines.Count; i++)
+        {
+            if (dropTrailLines[i] != null)
+            {
+                dropTrailLines[i].enabled = false;
+            }
+        }
+    }
+
+    private void DestroyDropTrails()
+    {
+        dropTrailLines.Clear();
+
+        if (dropTrailRoot != null)
+        {
+            Destroy(dropTrailRoot);
+            dropTrailRoot = null;
+        }
+    }
+
+    private List<Vector3> GetDropTrailAnchors()
+    {
+        List<Vector3> anchors = new List<Vector3>();
+        if (activePiece == null) return anchors;
+
+        Vector3Int[] cubeCells = GetActiveCubeCells();
+        HashSet<Vector3Int> occupiedCells = new HashSet<Vector3Int>(cubeCells);
+        HashSet<Vector2Int> projectedFootprint = new HashSet<Vector2Int>();
+        Dictionary<Vector2Int, int> projectedFootprintMinY = new Dictionary<Vector2Int, int>();
+
+        for (int i = 0; i < cubeCells.Length; i++)
+        {
+            Vector3Int cell = cubeCells[i];
+            if (occupiedCells.Contains(cell + Vector3Int.down)) continue;
+
+            Vector2Int footprintCell = new Vector2Int(cell.x, cell.z);
+            projectedFootprint.Add(footprintCell);
+
+            if (!projectedFootprintMinY.TryGetValue(footprintCell, out int minY) || cell.y < minY)
+            {
+                projectedFootprintMinY[footprintCell] = cell.y;
+            }
+        }
+
+        float inset = Mathf.Clamp(dropTrailCornerInset, 0f, 0.49f);
+        HashSet<long> seenCorners = new HashSet<long>();
+
+        AddFootprintVertexAnchors(projectedFootprint, projectedFootprintMinY, inset, anchors, seenCorners);
+
+        anchors.Sort((a, b) =>
+        {
+            int xCompare = a.x.CompareTo(b.x);
+            if (xCompare != 0) return xCompare;
+
+            int zCompare = a.z.CompareTo(b.z);
+            if (zCompare != 0) return zCompare;
+
+            return a.y.CompareTo(b.y);
+        });
+
+        return anchors;
+    }
+
+    private Vector3Int[] GetActiveCubeCells()
+    {
+        if (activePiece == null) return Array.Empty<Vector3Int>();
+
+        Vector3Int[] cells = new Vector3Int[activePiece.transform.childCount];
+        for (int i = 0; i < activePiece.transform.childCount; i++)
+        {
+            Vector3 worldPosition = activePiece.transform.GetChild(i).position;
+            cells[i] = grid != null
+                ? grid.WorldToCell(worldPosition)
+                : new Vector3Int(
+                    Mathf.RoundToInt(worldPosition.x),
+                    Mathf.RoundToInt(worldPosition.y),
+                    Mathf.RoundToInt(worldPosition.z));
+        }
+
+        return cells;
+    }
+
+    private void AddFootprintVertexAnchors(HashSet<Vector2Int> footprint, IReadOnlyDictionary<Vector2Int, int> footprintMinY, float inset, List<Vector3> anchors, HashSet<long> seenCorners)
+    {
+        Dictionary<Vector2Int, int> cornerMasks = new Dictionary<Vector2Int, int>();
+
+        foreach (Vector2Int cell in footprint)
+        {
+            if (!footprint.Contains(new Vector2Int(cell.x, cell.y - 1)))
+            {
+                AddCornerMask(cornerMasks, new Vector2Int(cell.x, cell.y), 1);
+                AddCornerMask(cornerMasks, new Vector2Int(cell.x + 1, cell.y), 2);
+            }
+
+            if (!footprint.Contains(new Vector2Int(cell.x, cell.y + 1)))
+            {
+                AddCornerMask(cornerMasks, new Vector2Int(cell.x, cell.y + 1), 1);
+                AddCornerMask(cornerMasks, new Vector2Int(cell.x + 1, cell.y + 1), 2);
+            }
+
+            if (!footprint.Contains(new Vector2Int(cell.x - 1, cell.y)))
+            {
+                AddCornerMask(cornerMasks, new Vector2Int(cell.x, cell.y), 4);
+                AddCornerMask(cornerMasks, new Vector2Int(cell.x, cell.y + 1), 8);
+            }
+
+            if (!footprint.Contains(new Vector2Int(cell.x + 1, cell.y)))
+            {
+                AddCornerMask(cornerMasks, new Vector2Int(cell.x + 1, cell.y), 4);
+                AddCornerMask(cornerMasks, new Vector2Int(cell.x + 1, cell.y + 1), 8);
+            }
+        }
+
+        foreach (KeyValuePair<Vector2Int, int> entry in cornerMasks)
+        {
+            int mask = entry.Value;
+            bool hasHorizontal = (mask & 3) != 0;
+            bool hasVertical = (mask & 12) != 0;
+            if (!hasHorizontal || !hasVertical) continue;
+
+            Vector3 anchor = BuildFootprintVertexAnchor(entry.Key, footprint, footprintMinY, inset);
+            long key = EncodeDropTrailAnchor(anchor);
+            if (!seenCorners.Add(key)) continue;
+
+            anchors.Add(anchor);
+        }
+    }
+
+    private static long EncodeDropTrailAnchor(Vector3 anchor)
+    {
+        int x = Mathf.RoundToInt(anchor.x * 1000f);
+        int y = Mathf.RoundToInt(anchor.y * 1000f);
+        int z = Mathf.RoundToInt(anchor.z * 1000f);
+        return (((long)x & 0x1FFFFF) << 42)
+            ^ (((long)y & 0x1FFFFF) << 21)
+            ^ ((long)z & 0x1FFFFF);
+    }
+
+    private static void AddCornerMask(Dictionary<Vector2Int, int> cornerMasks, Vector2Int corner, int mask)
+    {
+        cornerMasks.TryGetValue(corner, out int existingMask);
+        cornerMasks[corner] = existingMask | mask;
+    }
+
+    private Vector3 BuildFootprintVertexAnchor(Vector2Int corner, HashSet<Vector2Int> footprint, IReadOnlyDictionary<Vector2Int, int> footprintMinY, float inset)
+    {
+        Vector2 interiorDirection = Vector2.zero;
+        int anchorCellY = int.MaxValue;
+
+        TryAccumulateFootprintCorner(new Vector2Int(corner.x - 1, corner.y - 1), new Vector2(-1f, -1f), footprint, footprintMinY, ref interiorDirection, ref anchorCellY);
+        TryAccumulateFootprintCorner(new Vector2Int(corner.x, corner.y - 1), new Vector2(1f, -1f), footprint, footprintMinY, ref interiorDirection, ref anchorCellY);
+        TryAccumulateFootprintCorner(new Vector2Int(corner.x - 1, corner.y), new Vector2(-1f, 1f), footprint, footprintMinY, ref interiorDirection, ref anchorCellY);
+        TryAccumulateFootprintCorner(new Vector2Int(corner.x, corner.y), new Vector2(1f, 1f), footprint, footprintMinY, ref interiorDirection, ref anchorCellY);
+
+        float insetX = interiorDirection.x == 0f ? 0f : Mathf.Sign(interiorDirection.x) * inset;
+        float insetZ = interiorDirection.y == 0f ? 0f : Mathf.Sign(interiorDirection.y) * inset;
+        float anchorY = anchorCellY == int.MaxValue ? -0.5f : anchorCellY - 0.5f;
+
+        Vector3 origin = grid != null ? grid.transform.position : Vector3.zero;
+        return origin + new Vector3(corner.x - 0.5f + insetX, anchorY, corner.y - 0.5f + insetZ);
+    }
+
+    private static void TryAccumulateFootprintCorner(
+        Vector2Int footprintCell,
+        Vector2 contribution,
+        HashSet<Vector2Int> footprint,
+        IReadOnlyDictionary<Vector2Int, int> footprintMinY,
+        ref Vector2 interiorDirection,
+        ref int anchorCellY)
+    {
+        if (!footprint.Contains(footprintCell)) return;
+
+        interiorDirection += contribution;
+
+        if (footprintMinY.TryGetValue(footprintCell, out int cellY) && cellY < anchorCellY)
+        {
+            anchorCellY = cellY;
+        }
+    }
+
     private void CreateArcIndicator(string name, Color color, float height, float radius, float startDegrees, float endDegrees)
     {
         const int segments = 18;
@@ -1119,6 +1385,26 @@ public class ActivePieceController : MonoBehaviour
         indicatorLabels.Add(textMesh);
     }
 
+    private void CreateDropTrailLine(string name, float width)
+    {
+        GameObject lineObject = new GameObject(name);
+        lineObject.transform.SetParent(dropTrailRoot.transform, false);
+
+        LineRenderer lineRenderer = lineObject.AddComponent<LineRenderer>();
+        lineRenderer.useWorldSpace = true;
+        lineRenderer.positionCount = 2;
+        lineRenderer.startWidth = width;
+        lineRenderer.endWidth = width;
+        lineRenderer.material = GetLineMaterial();
+        lineRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        lineRenderer.receiveShadows = false;
+        lineRenderer.numCapVertices = 8;
+        lineRenderer.alignment = LineAlignment.View;
+        lineRenderer.textureMode = LineTextureMode.Stretch;
+
+        dropTrailLines.Add(lineRenderer);
+    }
+
     private void CreateLineRenderer(string name, Color color, float width, params Vector3[] positions)
     {
         GameObject lineObject = new GameObject(name);
@@ -1139,6 +1425,48 @@ public class ActivePieceController : MonoBehaviour
         lineRenderer.numCornerVertices = 2;
     }
 
+    private void UpdateDropTrailRenderer(LineRenderer lineRenderer, Vector3 start, Vector3 end, Color tint, float startAlphaScale, float endAlphaScale, bool visible)
+    {
+        if (lineRenderer == null) return;
+
+        lineRenderer.enabled = visible;
+        if (!visible) return;
+
+        Color startColor = tint;
+        startColor.a *= startAlphaScale;
+
+        Color endColor = tint;
+        endColor.a *= endAlphaScale;
+
+        lineRenderer.startColor = startColor;
+        lineRenderer.endColor = endColor;
+        lineRenderer.SetPosition(0, start);
+        lineRenderer.SetPosition(1, end);
+    }
+
+    private Color GetDropTrailTint()
+    {
+        if (activeRenderers.Count == 0) return dropTrailColor;
+
+        Color accumulatedColor = Color.black;
+        int sampleCount = 0;
+
+        foreach (Renderer renderer in activeRenderers)
+        {
+            if (renderer == null) continue;
+
+            accumulatedColor += GetRendererBaseColor(renderer.sharedMaterial);
+            sampleCount++;
+        }
+
+        if (sampleCount == 0) return dropTrailColor;
+
+        Color averageColor = accumulatedColor * (1f / sampleCount);
+        Color tint = Color.Lerp(dropTrailColor, averageColor, 0.45f);
+        tint.a = dropTrailColor.a;
+        return tint;
+    }
+
     private Material GetLineMaterial()
     {
         if (indicatorLineMaterial != null) return indicatorLineMaterial;
@@ -1151,6 +1479,125 @@ public class ActivePieceController : MonoBehaviour
 
         indicatorLineMaterial = shader != null ? new Material(shader) : null;
         return indicatorLineMaterial;
+    }
+
+    private void EnsureDropTrailLineCount(int requiredCount)
+    {
+        while (dropTrailLines.Count < requiredCount)
+        {
+            int trailIndex = dropTrailLines.Count / 2;
+            bool isOuter = dropTrailLines.Count % 2 == 0;
+            float width = isOuter ? dropTrailOuterWidth : dropTrailInnerWidth;
+            string suffix = isOuter ? "Outer" : "Inner";
+            CreateDropTrailLine($"DropTrail_{trailIndex}_{suffix}", width);
+        }
+    }
+
+    private Vector3[] GetActiveCubeWorldPositions()
+    {
+        if (activePiece == null) return Array.Empty<Vector3>();
+
+        Vector3[] positions = new Vector3[activePiece.transform.childCount];
+        for (int i = 0; i < activePiece.transform.childCount; i++)
+        {
+            positions[i] = activePiece.transform.GetChild(i).position;
+        }
+
+        return positions;
+    }
+
+    private void SpawnHardDropTrail(IReadOnlyList<Vector3> startPositions, IReadOnlyList<Vector3> endPositions)
+    {
+        if (startPositions == null || endPositions == null) return;
+
+        int streakCount = Mathf.Min(startPositions.Count, endPositions.Count);
+        if (streakCount == 0) return;
+
+        GameObject trailRoot = new GameObject("HardDropTrail");
+        List<LineRenderer> streakLines = new List<LineRenderer>(streakCount * 2);
+
+        for (int i = 0; i < streakCount; i++)
+        {
+            if ((startPositions[i] - endPositions[i]).sqrMagnitude < 0.0001f) continue;
+
+            streakLines.Add(CreateTransientTrailRenderer(trailRoot.transform, $"HardDropTrail_{i}_Outer", hardDropTrailOuterWidth));
+            streakLines.Add(CreateTransientTrailRenderer(trailRoot.transform, $"HardDropTrail_{i}_Inner", hardDropTrailInnerWidth));
+
+            UpdateDropTrailRenderer(streakLines[streakLines.Count - 2], startPositions[i], endPositions[i], hardDropTrailColor, 0.18f, 0.02f, visible: true);
+            UpdateDropTrailRenderer(streakLines[streakLines.Count - 1], startPositions[i], endPositions[i], hardDropTrailColor, 1f, 0.18f, visible: true);
+        }
+
+        if (streakLines.Count == 0)
+        {
+            Destroy(trailRoot);
+            return;
+        }
+
+        Destroy(trailRoot, Mathf.Max(0.05f, hardDropTrailDuration + 0.05f));
+        StartCoroutine(FadeTransientTrail(trailRoot, streakLines, hardDropTrailDuration));
+    }
+
+    private IEnumerator FadeTransientTrail(GameObject trailRoot, IReadOnlyList<LineRenderer> trailLines, float duration)
+    {
+        float safeDuration = Mathf.Max(0.01f, duration);
+        Color[] startColors = new Color[trailLines.Count];
+        Color[] endColors = new Color[trailLines.Count];
+
+        for (int i = 0; i < trailLines.Count; i++)
+        {
+            LineRenderer trailLine = trailLines[i];
+            if (trailLine == null) continue;
+
+            startColors[i] = trailLine.startColor;
+            endColors[i] = trailLine.endColor;
+        }
+
+        float elapsed = 0f;
+        while (elapsed < safeDuration)
+        {
+            float alpha = 1f - (elapsed / safeDuration);
+
+            for (int i = 0; i < trailLines.Count; i++)
+            {
+                LineRenderer trailLine = trailLines[i];
+                if (trailLine == null) continue;
+
+                Color startColor = startColors[i];
+                startColor.a *= alpha;
+                Color endColor = endColors[i];
+                endColor.a *= alpha;
+
+                trailLine.startColor = startColor;
+                trailLine.endColor = endColor;
+            }
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        if (trailRoot != null)
+        {
+            Destroy(trailRoot);
+        }
+    }
+
+    private LineRenderer CreateTransientTrailRenderer(Transform parent, string name, float width)
+    {
+        GameObject lineObject = new GameObject(name);
+        lineObject.transform.SetParent(parent, false);
+
+        LineRenderer lineRenderer = lineObject.AddComponent<LineRenderer>();
+        lineRenderer.useWorldSpace = true;
+        lineRenderer.positionCount = 2;
+        lineRenderer.startWidth = width;
+        lineRenderer.endWidth = width;
+        lineRenderer.material = GetLineMaterial();
+        lineRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        lineRenderer.receiveShadows = false;
+        lineRenderer.numCapVertices = 8;
+        lineRenderer.alignment = LineAlignment.View;
+        lineRenderer.textureMode = LineTextureMode.Stretch;
+        return lineRenderer;
     }
 
     // ---------------------------------------------------------------------
@@ -1437,8 +1884,15 @@ public class ActivePieceController : MonoBehaviour
 
     private void GameOver(string reason)
     {
+        if (postLockRoutine != null)
+        {
+            StopCoroutine(postLockRoutine);
+            postLockRoutine = null;
+        }
+
         CancelLockDelay();
         DestroyGhost();
+        DestroyDropTrails();
         DestroyRotationIndicators();
 
         if (activePiece != null)

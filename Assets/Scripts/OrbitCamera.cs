@@ -39,6 +39,12 @@ public class OrbitCamera : MonoBehaviour
     [SerializeField] private float elevatedFacePitch = 45f;
     [SerializeField] private float topDownFacePitch = 90f;
 
+    [Header("Layer Clear Impact")]
+    [SerializeField] private float clearShakeDistance = 0.16f;
+    [SerializeField] private float clearShakeDuration = 0.14f;
+    [SerializeField] private float clearShakeFrequency = 28f;
+    [SerializeField] private float clearShakeRollDegrees = 0.8f;
+
     private float yaw = 35f;
     private float pitch = 25f;
     private float targetYaw;
@@ -46,6 +52,11 @@ public class OrbitCamera : MonoBehaviour
     private float targetDistance;
 
     private Vector3 targetPoint;
+    private float impactShakeTimeRemaining;
+    private float impactShakeDuration;
+    private float impactShakeDistance;
+    private float impactRollDegrees;
+    private float impactShakeSeed;
 
     private void Awake()
     {
@@ -71,6 +82,7 @@ public class OrbitCamera : MonoBehaviour
         ResolveTargetPoint();
         HandleInput();
         SmoothTransform();
+        ApplyImpactShake();
     }
 
     private void ResolveTargetPoint()
@@ -141,6 +153,15 @@ public class OrbitCamera : MonoBehaviour
         targetPitch = Mathf.Clamp(flatFacePitch, pitchLimits.x, pitchLimits.y);
     }
 
+    public void PlayLayerClearImpact()
+    {
+        impactShakeDistance = clearShakeDistance;
+        impactShakeDuration = clearShakeDuration;
+        impactRollDegrees = clearShakeRollDegrees;
+        impactShakeTimeRemaining = clearShakeDuration;
+        impactShakeSeed = Random.Range(0f, 1000f);
+    }
+
     private float GetNearestFaceYaw(float sourceYaw)
     {
         return Mathf.Round(sourceYaw / faceYawStep) * faceYawStep;
@@ -171,5 +192,38 @@ public class OrbitCamera : MonoBehaviour
         Vector3 offset = rot * new Vector3(0f, 0f, -distance);
         transform.position = targetPoint + offset;
         transform.rotation = Quaternion.LookRotation(targetPoint - transform.position, Vector3.up);
+    }
+
+    private void ApplyImpactShake()
+    {
+        if (impactShakeTimeRemaining <= 0f) return;
+
+        impactShakeTimeRemaining = Mathf.Max(0f, impactShakeTimeRemaining - Time.deltaTime);
+
+        float normalizedProgress = impactShakeDuration > 0f
+            ? 1f - (impactShakeTimeRemaining / impactShakeDuration)
+            : 1f;
+        float envelope = 1f - normalizedProgress;
+        envelope *= envelope;
+
+        float time = Time.unscaledTime * clearShakeFrequency;
+        float lateral = SampleSignedNoise(impactShakeSeed + 11.7f, time);
+        float vertical = SampleSignedNoise(impactShakeSeed + 37.9f, time) * 0.65f;
+        float depth = SampleSignedNoise(impactShakeSeed + 73.1f, time) * 0.35f;
+
+        Vector3 positionalOffset =
+            transform.right * lateral * impactShakeDistance * envelope +
+            transform.up * vertical * impactShakeDistance * envelope +
+            transform.forward * depth * impactShakeDistance * envelope;
+
+        transform.position += positionalOffset;
+
+        float roll = SampleSignedNoise(impactShakeSeed + 101.3f, time) * impactRollDegrees * envelope;
+        transform.rotation = Quaternion.AngleAxis(roll, transform.forward) * transform.rotation;
+    }
+
+    private static float SampleSignedNoise(float seed, float time)
+    {
+        return Mathf.PerlinNoise(seed, time) * 2f - 1f;
     }
 }

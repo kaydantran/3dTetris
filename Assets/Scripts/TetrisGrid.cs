@@ -1,3 +1,5 @@
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -32,6 +34,11 @@ public class TetrisGrid : MonoBehaviour
     [Header("Scene Gizmos")]
     [Tooltip("If true, draws the grid bounds in the Scene view.")]
     [SerializeField] private bool drawGizmos = true;
+
+    [Header("Layer Clear Animation")]
+    [SerializeField] private float comboGravityFallSpeed = 14f;
+    [SerializeField] private float clearPause = 0.05f;
+    [SerializeField] private float settlePause = 0.03f;
 
     private Transform[,,] cells;
     private GameObject boundaryVisualRoot;
@@ -149,6 +156,28 @@ public class TetrisGrid : MonoBehaviour
         return transform.position.y + TopBoundaryY + 0.5f;
     }
 
+    public float GetSupportSurfaceWorldY(Vector3 worldPosition)
+    {
+        if (width <= 0 || depth <= 0)
+        {
+            return transform.position.y - 0.5f;
+        }
+
+        Vector3Int cell = WorldToCell(worldPosition);
+        int x = Mathf.Clamp(cell.x, 0, width - 1);
+        int z = Mathf.Clamp(cell.z, 0, depth - 1);
+
+        for (int y = height - 1; y >= 0; y--)
+        {
+            if (cells[x, y, z] != null)
+            {
+                return transform.position.y + y + 0.5f;
+            }
+        }
+
+        return transform.position.y - 0.5f;
+    }
+
     // ---------------------------------------------------------------------
     //  Public API — piece validation & locking
     // ---------------------------------------------------------------------
@@ -231,8 +260,52 @@ public class TetrisGrid : MonoBehaviour
                 ClearLayer(y);
             }
 
-            CollapseColumnsToFloor();
+            List<CollapseMove> moves = CollapseColumnsToFloor();
+            for (int i = 0; i < moves.Count; i++)
+            {
+                CollapseMove move = moves[i];
+                if (move.Cube != null)
+                {
+                    move.Cube.position = move.EndPosition;
+                }
+            }
+
             totalCleared += fullLayers.Count;
+        }
+    }
+
+    public IEnumerator CheckAndClearLayersAnimated(IEnumerable<int> candidateLayers, Action<int> onLayersCleared = null)
+    {
+        while (true)
+        {
+            List<int> fullLayers = GetFullLayers();
+            if (fullLayers.Count == 0)
+            {
+                yield break;
+            }
+
+            foreach (int y in fullLayers)
+            {
+                ClearLayer(y);
+            }
+
+            onLayersCleared?.Invoke(fullLayers.Count);
+
+            if (clearPause > 0f)
+            {
+                yield return new WaitForSeconds(clearPause);
+            }
+            else
+            {
+                yield return null;
+            }
+
+            yield return AnimateCollapseColumnsToFloor();
+
+            if (settlePause > 0f)
+            {
+                yield return new WaitForSeconds(settlePause);
+            }
         }
     }
 
@@ -278,8 +351,52 @@ public class TetrisGrid : MonoBehaviour
         }
     }
 
-    private void CollapseColumnsToFloor()
+    private IEnumerator AnimateCollapseColumnsToFloor()
     {
+        List<CollapseMove> moves = CollapseColumnsToFloor();
+        if (moves.Count == 0) yield break;
+
+        float safeFallSpeed = Mathf.Max(0.01f, comboGravityFallSpeed);
+
+        while (true)
+        {
+            bool anyMoving = false;
+            float step = safeFallSpeed * Time.deltaTime;
+
+            for (int i = 0; i < moves.Count; i++)
+            {
+                CollapseMove move = moves[i];
+                if (move.Cube == null) continue;
+
+                move.Cube.position = Vector3.MoveTowards(move.Cube.position, move.EndPosition, step);
+                if ((move.Cube.position - move.EndPosition).sqrMagnitude > 0.0001f)
+                {
+                    anyMoving = true;
+                }
+            }
+
+            if (!anyMoving)
+            {
+                break;
+            }
+
+            yield return null;
+        }
+
+        for (int i = 0; i < moves.Count; i++)
+        {
+            CollapseMove move = moves[i];
+            if (move.Cube != null)
+            {
+                move.Cube.position = move.EndPosition;
+            }
+        }
+    }
+
+    private List<CollapseMove> CollapseColumnsToFloor()
+    {
+        List<CollapseMove> moves = new List<CollapseMove>();
+
         for (int x = 0; x < width; x++)
         {
             for (int z = 0; z < depth; z++)
@@ -295,7 +412,7 @@ public class TetrisGrid : MonoBehaviour
                     {
                         cells[x, writeY, z] = cube;
                         cells[x, readY, z] = null;
-                        cube.position = CellToWorldCenter(new Vector3Int(x, writeY, z));
+                        moves.Add(new CollapseMove(cube, CellToWorldCenter(new Vector3Int(x, writeY, z))));
                     }
 
                     writeY++;
@@ -307,6 +424,8 @@ public class TetrisGrid : MonoBehaviour
                 }
             }
         }
+
+        return moves;
     }
 
     // ---------------------------------------------------------------------
@@ -445,4 +564,16 @@ public struct GridLockResult
 {
     public HashSet<int> TouchedLayers;
     public bool CrossedTopBoundary;
+}
+
+public readonly struct CollapseMove
+{
+    public CollapseMove(Transform cube, Vector3 endPosition)
+    {
+        Cube = cube;
+        EndPosition = endPosition;
+    }
+
+    public Transform Cube { get; }
+    public Vector3 EndPosition { get; }
 }
