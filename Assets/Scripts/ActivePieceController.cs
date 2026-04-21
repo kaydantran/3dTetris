@@ -407,9 +407,9 @@ public class ActivePieceController : MonoBehaviour
         return TryRotate(axis, angle);
     }
 
-    private void MoveUntilBlocked(Vector3Int delta)
+    private void MoveUntilBlocked(Vector3Int delta, bool playerInitiated = true)
     {
-        while (TryMove(delta))
+        while (TryMove(delta, playerInitiated))
         {
         }
     }
@@ -1013,6 +1013,7 @@ public class ActivePieceController : MonoBehaviour
             return;
         }
 
+        ApplyHeldSpawnShift();
         hasSwappedThisDrop = false;
         softDropHeld = false;
         dropTimer = 0f;
@@ -1032,6 +1033,22 @@ public class ActivePieceController : MonoBehaviour
         if (activePiece == null) return;
 
         activeRenderers.AddRange(activePiece.GetComponentsInChildren<Renderer>());
+    }
+
+    private void ApplyHeldSpawnShift()
+    {
+        if (activePiece == null) return;
+
+        bool moveLeftHeld = Input.GetKey(moveLeftKey);
+        bool moveRightHeld = Input.GetKey(moveRightKey);
+
+        if (moveLeftHeld == moveRightHeld) return;
+
+        Vector3Int shiftDelta = moveLeftHeld
+            ? ResolveViewMoveDelta(ViewMoveDirection.Left)
+            : ResolveViewMoveDelta(ViewMoveDirection.Right);
+
+        MoveUntilBlocked(shiftDelta, playerInitiated: false);
     }
 
     // ---------------------------------------------------------------------
@@ -1896,12 +1913,10 @@ public class ActivePieceController : MonoBehaviour
         DestroyGhost();
         DestroyDropTrails();
         DestroyRotationIndicators();
-
-        if (activePiece != null)
-        {
-            Destroy(activePiece);
-            activePiece = null;
-        }
+        Vector3 explosionOrigin = grid != null
+            ? grid.Center
+            : (activePiece != null ? activePiece.transform.position : transform.position);
+        List<Transform> gameOverFragments = CollectGameOverFragments();
 
         activeRotationState = 0;
 
@@ -1909,15 +1924,48 @@ public class ActivePieceController : MonoBehaviour
 
         if (gameMaster != null)
         {
-            gameMaster.OnGameOver(reason);
+            gameMaster.PlayGameOverExplosion(reason, explosionOrigin, orbitCamera, gameOverFragments);
         }
         else
         {
             Debug.Log($"Game Over: {reason}");
+
+            for (int i = 0; i < gameOverFragments.Count; i++)
+            {
+                if (gameOverFragments[i] != null)
+                {
+                    Destroy(gameOverFragments[i].gameObject);
+                }
+            }
         }
 
         NotifyStateChanged();
         enabled = false;
+    }
+
+    private List<Transform> CollectGameOverFragments()
+    {
+        List<Transform> fragments = new List<Transform>();
+
+        if (grid != null)
+        {
+            fragments.AddRange(grid.ReleaseLockedCubes());
+        }
+
+        if (activePiece != null)
+        {
+            while (activePiece.transform.childCount > 0)
+            {
+                Transform cube = activePiece.transform.GetChild(0);
+                cube.SetParent(null, worldPositionStays: true);
+                fragments.Add(cube);
+            }
+
+            Destroy(activePiece);
+            activePiece = null;
+        }
+
+        return fragments;
     }
 
     private enum ViewMoveDirection

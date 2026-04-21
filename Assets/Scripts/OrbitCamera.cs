@@ -45,6 +45,14 @@ public class OrbitCamera : MonoBehaviour
     [SerializeField] private float clearShakeFrequency = 28f;
     [SerializeField] private float clearShakeRollDegrees = 0.8f;
 
+    [Header("Game Over Impact")]
+    [SerializeField] private float gameOverShakeDistance = 1.1f;
+    [SerializeField] private float gameOverShakeDuration = 0.45f;
+    [SerializeField] private float gameOverShakeFrequency = 32f;
+    [SerializeField] private float gameOverShakeRollDegrees = 4.5f;
+    [SerializeField] private float gameOverSecondaryShakeFrequency = 67f;
+    [SerializeField] private float gameOverSecondaryShakeWeight = 0.5f;
+
     private float yaw = 35f;
     private float pitch = 25f;
     private float targetYaw;
@@ -55,6 +63,7 @@ public class OrbitCamera : MonoBehaviour
     private float impactShakeTimeRemaining;
     private float impactShakeDuration;
     private float impactShakeDistance;
+    private float impactShakeFrequency;
     private float impactRollDegrees;
     private float impactShakeSeed;
 
@@ -155,11 +164,18 @@ public class OrbitCamera : MonoBehaviour
 
     public void PlayLayerClearImpact()
     {
-        impactShakeDistance = clearShakeDistance;
-        impactShakeDuration = clearShakeDuration;
-        impactRollDegrees = clearShakeRollDegrees;
-        impactShakeTimeRemaining = clearShakeDuration;
-        impactShakeSeed = Random.Range(0f, 1000f);
+        StartImpactShake(clearShakeDistance, clearShakeDuration, clearShakeFrequency, clearShakeRollDegrees);
+    }
+
+    public void PlayGameOverImpact()
+    {
+        StartImpactShake(gameOverShakeDistance, gameOverShakeDuration, gameOverShakeFrequency, gameOverShakeRollDegrees);
+    }
+
+    public void PlayGameOverImpact(float duration)
+    {
+        float resolvedDuration = Mathf.Max(0f, duration);
+        StartImpactShake(gameOverShakeDistance, resolvedDuration, gameOverShakeFrequency, gameOverShakeRollDegrees);
     }
 
     private float GetNearestFaceYaw(float sourceYaw)
@@ -198,18 +214,27 @@ public class OrbitCamera : MonoBehaviour
     {
         if (impactShakeTimeRemaining <= 0f) return;
 
-        impactShakeTimeRemaining = Mathf.Max(0f, impactShakeTimeRemaining - Time.deltaTime);
+        impactShakeTimeRemaining = Mathf.Max(0f, impactShakeTimeRemaining - Time.unscaledDeltaTime);
 
-        float normalizedProgress = impactShakeDuration > 0f
-            ? 1f - (impactShakeTimeRemaining / impactShakeDuration)
-            : 1f;
-        float envelope = 1f - normalizedProgress;
-        envelope *= envelope;
+        float normalizedRemaining = impactShakeDuration > 0f
+            ? Mathf.Clamp01(impactShakeTimeRemaining / impactShakeDuration)
+            : 0f;
+        float envelope = normalizedRemaining > 0.2f
+            ? 1f
+            : Mathf.SmoothStep(0f, 1f, normalizedRemaining / 0.2f);
 
-        float time = Time.unscaledTime * clearShakeFrequency;
-        float lateral = SampleSignedNoise(impactShakeSeed + 11.7f, time);
-        float vertical = SampleSignedNoise(impactShakeSeed + 37.9f, time) * 0.65f;
-        float depth = SampleSignedNoise(impactShakeSeed + 73.1f, time) * 0.35f;
+        float primaryTime = Time.unscaledTime * impactShakeFrequency;
+        float secondaryTime = Time.unscaledTime * gameOverSecondaryShakeFrequency;
+
+        float lateral =
+            SampleSignedNoise(impactShakeSeed + 11.7f, primaryTime) +
+            SampleSignedNoise(impactShakeSeed + 211.4f, secondaryTime) * gameOverSecondaryShakeWeight;
+        float vertical =
+            SampleSignedNoise(impactShakeSeed + 37.9f, primaryTime) * 0.8f +
+            SampleSignedNoise(impactShakeSeed + 263.8f, secondaryTime) * 0.45f * gameOverSecondaryShakeWeight;
+        float depth =
+            SampleSignedNoise(impactShakeSeed + 73.1f, primaryTime) * 0.45f +
+            SampleSignedNoise(impactShakeSeed + 317.2f, secondaryTime) * 0.3f * gameOverSecondaryShakeWeight;
 
         Vector3 positionalOffset =
             transform.right * lateral * impactShakeDistance * envelope +
@@ -218,8 +243,21 @@ public class OrbitCamera : MonoBehaviour
 
         transform.position += positionalOffset;
 
-        float roll = SampleSignedNoise(impactShakeSeed + 101.3f, time) * impactRollDegrees * envelope;
+        float roll =
+            (SampleSignedNoise(impactShakeSeed + 101.3f, primaryTime) +
+            SampleSignedNoise(impactShakeSeed + 389.6f, secondaryTime) * gameOverSecondaryShakeWeight)
+            * impactRollDegrees * envelope;
         transform.rotation = Quaternion.AngleAxis(roll, transform.forward) * transform.rotation;
+    }
+
+    private void StartImpactShake(float distanceValue, float durationValue, float frequencyValue, float rollDegreesValue)
+    {
+        impactShakeDistance = Mathf.Max(0f, distanceValue);
+        impactShakeDuration = Mathf.Max(0f, durationValue);
+        impactShakeFrequency = Mathf.Max(0.01f, frequencyValue);
+        impactRollDegrees = Mathf.Max(0f, rollDegreesValue);
+        impactShakeTimeRemaining = impactShakeDuration;
+        impactShakeSeed = Random.Range(0f, 1000f);
     }
 
     private static float SampleSignedNoise(float seed, float time)

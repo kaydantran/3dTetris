@@ -234,6 +234,36 @@ public class TetrisGrid : MonoBehaviour
         return result;
     }
 
+    public List<Transform> ReleaseLockedCubes()
+    {
+        EnsureCellArray();
+
+        List<Transform> releasedCubes = new List<Transform>();
+        HashSet<Transform> seenCubes = new HashSet<Transform>();
+
+        for (int x = 0; x < width; x++)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                for (int z = 0; z < depth; z++)
+                {
+                    Transform cube = cells[x, y, z];
+                    if (cube == null) continue;
+
+                    if (seenCubes.Add(cube))
+                    {
+                        cube.SetParent(null, worldPositionStays: true);
+                        releasedCubes.Add(cube);
+                    }
+
+                    cells[x, y, z] = null;
+                }
+            }
+        }
+
+        return releasedCubes;
+    }
+
     // ---------------------------------------------------------------------
     //  Layer clearing
     // ---------------------------------------------------------------------

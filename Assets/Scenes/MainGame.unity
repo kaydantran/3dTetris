@@ -300,6 +300,10 @@ MonoBehaviour:
   clearShakeDuration: 0.14
   clearShakeFrequency: 28
   clearShakeRollDegrees: 0.8
+  gameOverShakeDistance: 0.75
+  gameOverShakeDuration: 0.45
+  gameOverShakeFrequency: 18
+  gameOverShakeRollDegrees: 2.5
 --- !u!114 &1206521279
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -574,6 +578,18 @@ MonoBehaviour:
   clearSound: {fileID: 8300000, guid: 283abbdf20c7b48829f728ef0b274d9d, type: 3}
   placeBlockVolume: 0.85
   clearVolume: 0.75
+  gameOverLaunchDelay: 1
+  explosionDuration: 3
+  minLaunchSpeed: 8
+  maxLaunchSpeed: 16
+  upwardLaunchBias: 1.15
+  randomSpread: 0.9
+  gravity: 20
+  minSpinSpeed: 220
+  maxSpinSpeed: 640
+  trailLifetime: 0.55
+  trailStartWidth: 0.18
+  trailEndWidth: 0.01
 --- !u!4 &1790465954
 Transform:
   m_ObjectHideFlags: 0
