@@ -6,12 +6,19 @@ using UnityEngine.UI;
 /// Simple progression and game-state coordinator. It tracks cleared layers for score/speed
 /// and exposes a placeholder game-over entry point for the piece controller.
 /// </summary>
+[RequireComponent(typeof(AudioSource))]
 public class GameMaster : MonoBehaviour
 {
     [SerializeField] private ActivePieceController pieceController;
 
     [Tooltip("How many layers must be cleared before the drop speed increases.")]
     [SerializeField] private int layersPerSpeedBump = 3;
+
+    [Header("Audio")]
+    [SerializeField] private AudioClip placeBlockSound;
+    [SerializeField] private AudioClip clearSound;
+    [SerializeField, Range(0f, 1f)] private float placeBlockVolume = 0.75f;
+    [SerializeField, Range(0f, 1f)] private float clearVolume = 0.85f;
 
     private int totalLayersCleared;
     private int layersSinceLastBump;
@@ -20,6 +27,7 @@ public class GameMaster : MonoBehaviour
     private bool isGameOver;
     private float gameplayStartTime = -1f;
     private float finalPiecesPerSecond;
+    private AudioSource effectsAudioSource;
 
     public int Score => score;
     public int TotalLayersCleared => totalLayersCleared;
@@ -35,6 +43,11 @@ public class GameMaster : MonoBehaviour
         {
             pieceController = FindAnyObjectByType<ActivePieceController>();
         }
+
+        effectsAudioSource = GetComponent<AudioSource>();
+        effectsAudioSource.playOnAwake = false;
+        effectsAudioSource.spatialBlend = 0f;
+        effectsAudioSource.loop = false;
 
         if (FindAnyObjectByType<GameplayHudController>() == null)
         {
@@ -108,8 +121,25 @@ public class GameMaster : MonoBehaviour
         return totalPiecesLocked / elapsed;
     }
 
+    public void PlayPlaceBlockSound()
+    {
+        PlaySound(placeBlockSound, placeBlockVolume);
+    }
+
+    public void PlayClearSound()
+    {
+        PlaySound(clearSound, clearVolume);
+    }
+
     private void NotifyStatsChanged()
     {
         StatsChanged?.Invoke();
+    }
+
+    private void PlaySound(AudioClip clip, float volume)
+    {
+        if (effectsAudioSource == null || clip == null) return;
+
+        effectsAudioSource.PlayOneShot(clip, Mathf.Clamp01(volume));
     }
 }
