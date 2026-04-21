@@ -11,6 +11,7 @@ using UnityEngine.EventSystems;
 public class ActivePieceController : MonoBehaviour
 {
     private const int ModernPreviewCount = 5;
+    private const int IntroDemoSeed = 314159;
 
     [Header("References")]
     [SerializeField] private TetrisGrid grid;
@@ -959,15 +960,15 @@ public class ActivePieceController : MonoBehaviour
             yield break;
         }
 
-        GameObject introPiecePrefab = ResolveIntroDemoPiecePrefab();
-        if (introPiecePrefab == null)
+        int targetLayer = Mathf.Clamp(introDemoLayerY, 0, Mathf.Max(0, grid.Height - 1));
+        List<IntroDemoPlacement> introPlacements = BuildIntroDemoPlacements();
+        if (introPlacements.Count == 0)
         {
             yield break;
         }
 
-        int targetLayer = Mathf.Clamp(introDemoLayerY, 0, Mathf.Max(0, grid.Height - 1));
-        List<Vector3Int> introPlacements = BuildIntroDemoPlacements();
-        if (introPlacements.Count == 0)
+        List<IntroDemoPlacement> spawnSequence = BuildIntroDemoSpawnSequence(introPlacements);
+        if (spawnSequence.Count == 0)
         {
             yield break;
         }
@@ -980,19 +981,19 @@ public class ActivePieceController : MonoBehaviour
         introPiecesInFlight = 0;
         int placementIndex = 0;
         bool spawnedFirstWave = false;
-
-        while (placementIndex < introPlacements.Count)
+        while (placementIndex < spawnSequence.Count)
         {
             int piecesThisWave = spawnedFirstWave ? Mathf.Max(1, introDemoWaveSize) : 1;
 
-            for (int i = 0; i < piecesThisWave && placementIndex < introPlacements.Count; i++, placementIndex++)
+            for (int i = 0; i < piecesThisWave && placementIndex < spawnSequence.Count; i++, placementIndex++)
             {
-                StartCoroutine(AnimateIntroPieceToPlacement(introPiecePrefab, introPlacements[placementIndex], targetLayer));
+                IntroDemoPlacement placement = spawnSequence[placementIndex];
+                StartCoroutine(AnimateIntroPieceToPlacement(placement, targetLayer));
             }
 
             spawnedFirstWave = true;
 
-            if (placementIndex < introPlacements.Count && introDemoSetInterval > 0f)
+            if (placementIndex < spawnSequence.Count && introDemoSetInterval > 0f)
             {
                 yield return new WaitForSeconds(introDemoSetInterval);
             }
@@ -1019,15 +1020,33 @@ public class ActivePieceController : MonoBehaviour
         }
     }
 
-    private IEnumerator AnimateIntroPieceToPlacement(GameObject introPiecePrefab, Vector3Int rootCell, int targetLayer)
+    private IEnumerator AnimateIntroPieceToPlacement(IntroDemoPlacement placement, int targetLayer)
     {
+        GameObject introPiecePrefab = ResolveIntroDemoPiecePrefab(placement.PieceCode);
+        if (introPiecePrefab == null)
+        {
+            yield break;
+        }
+
+        Quaternion targetRotation = ResolveIntroDemoRotation(introPiecePrefab, placement);
+        if (targetRotation == Quaternion.identity && !IntroPlacementMatchesPrefab(introPiecePrefab, targetRotation, placement))
+        {
+            Debug.LogWarning($"Could not resolve intro rotation for {placement.PieceCode}.");
+            yield break;
+        }
+
+        if (!TryResolveIntroPieceRootPosition(introPiecePrefab, targetRotation, placement, targetLayer, out Vector3 targetPosition))
+        {
+            Debug.LogWarning($"Could not resolve intro target position for {placement.PieceCode}.");
+            yield break;
+        }
+
         introPiecesInFlight++;
 
-        Quaternion flatRotation = Quaternion.Euler(90f, 0f, 0f);
-        Vector3 targetPosition = grid.CellToWorldCenter(new Vector3Int(rootCell.x, targetLayer, rootCell.z));
-        Vector3 spawnPosition = targetPosition + Vector3.up * Mathf.Max(1f, introDemoSpawnHeight);
-        GameObject introPiece = Instantiate(introPiecePrefab, spawnPosition, flatRotation);
-        introPiece.name = $"Intro_{introPiecePrefab.name}_{rootCell.x}_{targetLayer}_{rootCell.z}";
+        Vector3 spawnPosition = BuildIntroSpawnPosition(targetPosition);
+
+        GameObject introPiece = Instantiate(introPiecePrefab, spawnPosition, targetRotation);
+        introPiece.name = $"Intro_{placement.PieceCode}_{placement.Id}";
 
         float duration = Mathf.Max(0.05f, introDemoPieceFallDuration);
         float elapsed = 0f;
@@ -1049,64 +1068,308 @@ public class ActivePieceController : MonoBehaviour
 
         if (introPiece != null)
         {
-            introPiece.transform.SetPositionAndRotation(targetPosition, flatRotation);
+            introPiece.transform.SetPositionAndRotation(targetPosition, targetRotation);
             grid.LockPiece(introPiece.transform);
         }
 
         introPiecesInFlight = Mathf.Max(0, introPiecesInFlight - 1);
     }
 
-    private GameObject ResolveIntroDemoPiecePrefab()
+    private Vector3 BuildIntroSpawnPosition(Vector3 targetPosition)
+    {
+        return targetPosition + Vector3.up * Mathf.Max(1f, introDemoSpawnHeight);
+    }
+
+    private GameObject ResolveIntroDemoPiecePrefab(string pieceCode)
     {
         foreach (GameObject piecePrefab in piecePrefabs)
         {
             if (piecePrefab == null) continue;
-            if (piecePrefab.name.IndexOf("PieceO", StringComparison.OrdinalIgnoreCase) >= 0) return piecePrefab;
+            if (piecePrefab.name.IndexOf($"Piece{pieceCode}", StringComparison.OrdinalIgnoreCase) >= 0) return piecePrefab;
         }
 
-        Debug.LogWarning("Intro clear demo requires a PieceO prefab in piecePrefabs.");
+        Debug.LogWarning($"Intro clear demo requires a Piece{pieceCode} prefab in piecePrefabs.");
         return null;
     }
 
-    private List<Vector3Int> BuildIntroDemoPlacements()
+    private Quaternion ResolveIntroDemoRotation(GameObject piecePrefab, IntroDemoPlacement placement)
     {
-        List<Vector3Int> placements = new List<Vector3Int>();
-
-        if (grid.Width % 2 != 0 || grid.Depth % 2 != 0)
+        foreach (Quaternion rotation in BuildIntroRotationCandidates())
         {
-            Debug.LogWarning("Intro clear demo requires even grid width and depth to tile the layer with O pieces.");
-            return placements;
-        }
-
-        int tileCountX = grid.Width / 2;
-        int tileCountZ = grid.Depth / 2;
-        int centerTileX = tileCountX / 2;
-        int centerTileZ = tileCountZ / 2;
-
-        for (int tileX = 0; tileX < tileCountX; tileX++)
-        {
-            for (int tileZ = 0; tileZ < tileCountZ; tileZ++)
+            if (IntroPlacementMatchesPrefab(piecePrefab, rotation, placement))
             {
-                placements.Add(new Vector3Int(tileX * 2, 0, tileZ * 2));
+                return rotation;
             }
         }
 
-        placements.Sort((a, b) =>
+        return Quaternion.identity;
+    }
+
+    private static IEnumerable<Quaternion> BuildIntroRotationCandidates()
+    {
+        List<Quaternion> candidates = new List<Quaternion>();
+
+        for (int x = 0; x < 4; x++)
         {
-            int aTileX = a.x / 2;
-            int aTileZ = a.z / 2;
-            int bTileX = b.x / 2;
-            int bTileZ = b.z / 2;
+            for (int y = 0; y < 4; y++)
+            {
+                for (int z = 0; z < 4; z++)
+                {
+                    Quaternion rotation = Quaternion.Euler(x * 90f, y * 90f, z * 90f);
+                    bool isDuplicate = false;
 
-            int aDistance = Mathf.Abs(aTileX - centerTileX) + Mathf.Abs(aTileZ - centerTileZ);
-            int bDistance = Mathf.Abs(bTileX - centerTileX) + Mathf.Abs(bTileZ - centerTileZ);
-            if (aDistance != bDistance) return aDistance.CompareTo(bDistance);
+                    foreach (Quaternion existing in candidates)
+                    {
+                        if (Mathf.Abs(Quaternion.Dot(existing, rotation)) > 0.9999f)
+                        {
+                            isDuplicate = true;
+                            break;
+                        }
+                    }
 
-            if (aTileZ != bTileZ) return aTileZ.CompareTo(bTileZ);
-            return aTileX.CompareTo(bTileX);
+                    if (!isDuplicate)
+                    {
+                        candidates.Add(rotation);
+                    }
+                }
+            }
+        }
+
+        candidates.Sort((a, b) =>
+        {
+            Vector3 aUp = a * Vector3.up;
+            Vector3 bUp = b * Vector3.up;
+            int aFlatScore = Mathf.Abs(aUp.y) < 0.01f ? 0 : 1;
+            int bFlatScore = Mathf.Abs(bUp.y) < 0.01f ? 0 : 1;
+            if (aFlatScore != bFlatScore) return aFlatScore.CompareTo(bFlatScore);
+
+            Vector3 aForward = a * Vector3.forward;
+            Vector3 bForward = b * Vector3.forward;
+            if (!Mathf.Approximately(aForward.y, bForward.y))
+            {
+                return -aForward.y.CompareTo(bForward.y);
+            }
+
+            return 0;
         });
 
-        return placements;
+        return candidates;
+    }
+
+    private bool IntroPlacementMatchesPrefab(GameObject piecePrefab, Quaternion rotation, IntroDemoPlacement placement)
+    {
+        List<Vector2Int> prefabCells = GetNormalizedIntroPrefabCells(piecePrefab.transform, rotation);
+        List<Vector2Int> placementCells = GetNormalizedIntroPlacementCells(placement);
+
+        if (prefabCells.Count != placementCells.Count) return false;
+
+        for (int i = 0; i < prefabCells.Count; i++)
+        {
+            if (prefabCells[i] != placementCells[i]) return false;
+        }
+
+        return true;
+    }
+
+    private bool TryResolveIntroPieceRootPosition(GameObject piecePrefab, Quaternion rotation, IntroDemoPlacement placement, int targetLayer, out Vector3 targetPosition)
+    {
+        targetPosition = Vector3.zero;
+        if (piecePrefab == null || grid == null)
+        {
+            return false;
+        }
+
+        Dictionary<Vector2Int, Vector3Int> targetCellsByNormalizedOffset = BuildIntroPlacementCellMap(placement, targetLayer);
+        if (targetCellsByNormalizedOffset.Count == 0)
+        {
+            return false;
+        }
+
+        List<Vector3Int> roundedOffsets = new List<Vector3Int>(piecePrefab.transform.childCount);
+        List<Vector3> rotatedLocalPositions = new List<Vector3>(piecePrefab.transform.childCount);
+        int minOffsetX = int.MaxValue;
+        int minOffsetZ = int.MaxValue;
+
+        for (int i = 0; i < piecePrefab.transform.childCount; i++)
+        {
+            Vector3 rotatedLocalPosition = rotation * piecePrefab.transform.GetChild(i).localPosition;
+            Vector3Int roundedOffset = new Vector3Int(
+                Mathf.RoundToInt(rotatedLocalPosition.x),
+                Mathf.RoundToInt(rotatedLocalPosition.y),
+                Mathf.RoundToInt(rotatedLocalPosition.z));
+
+            rotatedLocalPositions.Add(rotatedLocalPosition);
+            roundedOffsets.Add(roundedOffset);
+            minOffsetX = Mathf.Min(minOffsetX, roundedOffset.x);
+            minOffsetZ = Mathf.Min(minOffsetZ, roundedOffset.z);
+        }
+
+        bool hasResolvedRoot = false;
+        Vector3 resolvedRoot = Vector3.zero;
+
+        for (int i = 0; i < roundedOffsets.Count; i++)
+        {
+            Vector3Int roundedOffset = roundedOffsets[i];
+            Vector2Int normalizedKey = new Vector2Int(roundedOffset.x - minOffsetX, roundedOffset.z - minOffsetZ);
+
+            if (!targetCellsByNormalizedOffset.TryGetValue(normalizedKey, out Vector3Int targetCell))
+            {
+                return false;
+            }
+
+            Vector3 candidateRoot = grid.CellToWorldCenter(targetCell) - rotatedLocalPositions[i];
+            if (!hasResolvedRoot)
+            {
+                resolvedRoot = candidateRoot;
+                hasResolvedRoot = true;
+                continue;
+            }
+
+            if ((candidateRoot - resolvedRoot).sqrMagnitude > 0.0001f)
+            {
+                return false;
+            }
+        }
+
+        targetPosition = resolvedRoot;
+        return hasResolvedRoot;
+    }
+
+    private Dictionary<Vector2Int, Vector3Int> BuildIntroPlacementCellMap(IntroDemoPlacement placement, int targetLayer)
+    {
+        Dictionary<Vector2Int, Vector3Int> targetCellsByNormalizedOffset = new Dictionary<Vector2Int, Vector3Int>();
+        int minTargetX = int.MaxValue;
+        int minTargetZ = int.MaxValue;
+
+        foreach (Vector2Int cell in placement.Cells)
+        {
+            minTargetX = Mathf.Min(minTargetX, cell.x);
+            minTargetZ = Mathf.Min(minTargetZ, cell.y);
+        }
+
+        foreach (Vector2Int cell in placement.Cells)
+        {
+            Vector2Int normalized = new Vector2Int(cell.x - minTargetX, cell.y - minTargetZ);
+            targetCellsByNormalizedOffset[normalized] = new Vector3Int(cell.x, targetLayer, cell.y);
+        }
+
+        return targetCellsByNormalizedOffset;
+    }
+
+    private List<Vector2Int> GetNormalizedIntroPlacementCells(IntroDemoPlacement placement)
+    {
+        List<Vector2Int> normalizedCells = new List<Vector2Int>(placement.Cells.Length);
+        int minX = int.MaxValue;
+        int minZ = int.MaxValue;
+
+        foreach (Vector2Int cell in placement.Cells)
+        {
+            minX = Mathf.Min(minX, cell.x);
+            minZ = Mathf.Min(minZ, cell.y);
+        }
+
+        foreach (Vector2Int cell in placement.Cells)
+        {
+            normalizedCells.Add(new Vector2Int(cell.x - minX, cell.y - minZ));
+        }
+
+        normalizedCells.Sort((a, b) =>
+        {
+            if (a.x != b.x) return a.x.CompareTo(b.x);
+            return a.y.CompareTo(b.y);
+        });
+
+        return normalizedCells;
+    }
+
+    private List<Vector3Int> GetNormalizedIntroPrefabOffsets(Transform pieceRoot, Quaternion rotation)
+    {
+        List<Vector3Int> offsets = new List<Vector3Int>(pieceRoot.childCount);
+        int minX = int.MaxValue;
+        int minZ = int.MaxValue;
+
+        for (int i = 0; i < pieceRoot.childCount; i++)
+        {
+            Vector3 rotated = rotation * pieceRoot.GetChild(i).localPosition;
+            Vector3Int offset = new Vector3Int(
+                Mathf.RoundToInt(rotated.x),
+                Mathf.RoundToInt(rotated.y),
+                Mathf.RoundToInt(rotated.z));
+
+            offsets.Add(offset);
+            minX = Mathf.Min(minX, offset.x);
+            minZ = Mathf.Min(minZ, offset.z);
+        }
+
+        for (int i = 0; i < offsets.Count; i++)
+        {
+            Vector3Int offset = offsets[i];
+            offsets[i] = new Vector3Int(offset.x - minX, 0, offset.z - minZ);
+        }
+
+        offsets.Sort((a, b) =>
+        {
+            if (a.x != b.x) return a.x.CompareTo(b.x);
+            return a.z.CompareTo(b.z);
+        });
+
+        return offsets;
+    }
+
+    private List<Vector2Int> GetNormalizedIntroPrefabCells(Transform pieceRoot, Quaternion rotation)
+    {
+        List<Vector3Int> offsets = GetNormalizedIntroPrefabOffsets(pieceRoot, rotation);
+        List<Vector2Int> cells = new List<Vector2Int>(offsets.Count);
+
+        foreach (Vector3Int offset in offsets)
+        {
+            cells.Add(new Vector2Int(offset.x, offset.z));
+        }
+
+        return cells;
+    }
+
+    private List<IntroDemoPlacement> BuildIntroDemoSpawnSequence(List<IntroDemoPlacement> placements)
+    {
+        List<IntroDemoPlacement> sequence = new List<IntroDemoPlacement>(placements);
+        System.Random rng = new System.Random(IntroDemoSeed);
+
+        for (int i = sequence.Count - 1; i > 0; i--)
+        {
+            int swapIndex = rng.Next(i + 1);
+            (sequence[i], sequence[swapIndex]) = (sequence[swapIndex], sequence[i]);
+        }
+
+        return sequence;
+    }
+
+    private List<IntroDemoPlacement> BuildIntroDemoPlacements()
+    {
+        if (grid == null || grid.Width != 8 || grid.Depth != 8)
+        {
+            Debug.LogWarning("Intro clear demo mixed-piece layout currently expects an 8x8 playfield.");
+            return new List<IntroDemoPlacement>();
+        }
+
+        return new List<IntroDemoPlacement>
+        {
+            new IntroDemoPlacement("O_00", "O", new[] { new Vector2Int(0, 0), new Vector2Int(0, 1), new Vector2Int(1, 0), new Vector2Int(1, 1) }),
+            new IntroDemoPlacement("O_01", "O", new[] { new Vector2Int(2, 0), new Vector2Int(2, 1), new Vector2Int(3, 0), new Vector2Int(3, 1) }),
+            new IntroDemoPlacement("T_00", "T", new[] { new Vector2Int(4, 0), new Vector2Int(5, 0), new Vector2Int(5, 1), new Vector2Int(6, 0) }),
+            new IntroDemoPlacement("T_01", "T", new[] { new Vector2Int(6, 1), new Vector2Int(7, 0), new Vector2Int(7, 1), new Vector2Int(7, 2) }),
+            new IntroDemoPlacement("L_00", "L", new[] { new Vector2Int(2, 2), new Vector2Int(3, 2), new Vector2Int(4, 1), new Vector2Int(4, 2) }),
+            new IntroDemoPlacement("L_01", "L", new[] { new Vector2Int(0, 2), new Vector2Int(1, 2), new Vector2Int(1, 3), new Vector2Int(1, 4) }),
+            new IntroDemoPlacement("L_02", "L", new[] { new Vector2Int(3, 3), new Vector2Int(4, 3), new Vector2Int(5, 2), new Vector2Int(5, 3) }),
+            new IntroDemoPlacement("S_00", "S", new[] { new Vector2Int(6, 2), new Vector2Int(6, 3), new Vector2Int(7, 3), new Vector2Int(7, 4) }),
+            new IntroDemoPlacement("I_00", "I", new[] { new Vector2Int(0, 3), new Vector2Int(0, 4), new Vector2Int(0, 5), new Vector2Int(0, 6) }),
+            new IntroDemoPlacement("J_00", "J", new[] { new Vector2Int(1, 5), new Vector2Int(2, 3), new Vector2Int(2, 4), new Vector2Int(2, 5) }),
+            new IntroDemoPlacement("Z_00", "Z", new[] { new Vector2Int(3, 4), new Vector2Int(4, 4), new Vector2Int(4, 5), new Vector2Int(5, 5) }),
+            new IntroDemoPlacement("Z_01", "Z", new[] { new Vector2Int(5, 4), new Vector2Int(6, 4), new Vector2Int(6, 5), new Vector2Int(7, 5) }),
+            new IntroDemoPlacement("J_01", "J", new[] { new Vector2Int(2, 7), new Vector2Int(3, 5), new Vector2Int(3, 6), new Vector2Int(3, 7) }),
+            new IntroDemoPlacement("S_01", "S", new[] { new Vector2Int(0, 7), new Vector2Int(1, 6), new Vector2Int(1, 7), new Vector2Int(2, 6) }),
+            new IntroDemoPlacement("I_01", "I", new[] { new Vector2Int(4, 6), new Vector2Int(5, 6), new Vector2Int(6, 6), new Vector2Int(7, 6) }),
+            new IntroDemoPlacement("I_02", "I", new[] { new Vector2Int(4, 7), new Vector2Int(5, 7), new Vector2Int(6, 7), new Vector2Int(7, 7) })
+        };
     }
 
     private PieceIdentity GetNextBagPieceIdentity()
@@ -2180,6 +2443,20 @@ public class ActivePieceController : MonoBehaviour
             WaitingForAutoShift = false;
             NextRepeatTime = 0f;
         }
+    }
+
+    private readonly struct IntroDemoPlacement
+    {
+        public IntroDemoPlacement(string id, string pieceCode, Vector2Int[] cells)
+        {
+            Id = id;
+            PieceCode = pieceCode;
+            Cells = cells;
+        }
+
+        public string Id { get; }
+        public string PieceCode { get; }
+        public Vector2Int[] Cells { get; }
     }
 }
 
