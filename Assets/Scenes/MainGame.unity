@@ -586,8 +586,10 @@ MonoBehaviour:
   layersPerSpeedBump: 3
   placeBlockSound: {fileID: 8300000, guid: 46b8f25449c964332be00c8fcbaf426e, type: 3}
   clearSound: {fileID: 8300000, guid: 283abbdf20c7b48829f728ef0b274d9d, type: 3}
+  explosionSound: {fileID: 8300000, guid: d30cd48b349ca49bd91e85d338ab5959, type: 3}
   placeBlockVolume: 0.85
   clearVolume: 0.75
+  explosionVolume: 0.8
   gameOverLaunchDelay: 1
   explosionDuration: 3
   gameOverSlowMotionScale: 0.2

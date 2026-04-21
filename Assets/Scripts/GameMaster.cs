@@ -3,6 +3,9 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 /// <summary>
 /// Simple progression and game-state coordinator. It tracks cleared layers for score/speed
@@ -19,8 +22,10 @@ public class GameMaster : MonoBehaviour
     [Header("Audio")]
     [SerializeField] private AudioClip placeBlockSound;
     [SerializeField] private AudioClip clearSound;
+    [SerializeField] private AudioClip explosionSound;
     [SerializeField, Range(0f, 1f)] private float placeBlockVolume = 0.75f;
     [SerializeField, Range(0f, 1f)] private float clearVolume = 0.85f;
+    [SerializeField, Range(0f, 1f)] private float explosionVolume = 0.95f;
 
     [Header("Game Over Explosion")]
     [SerializeField] private float gameOverLaunchDelay = 0.12f;
@@ -64,6 +69,10 @@ public class GameMaster : MonoBehaviour
 
     private void Awake()
     {
+#if UNITY_EDITOR
+        ResolveAudioClips();
+#endif
+
         if (pieceController == null)
         {
             pieceController = FindAnyObjectByType<ActivePieceController>();
@@ -100,6 +109,13 @@ public class GameMaster : MonoBehaviour
         {
             Destroy(flashCanvas.gameObject);
         }
+    }
+
+    private void OnValidate()
+    {
+#if UNITY_EDITOR
+        ResolveAudioClips();
+#endif
     }
 
     public void OnGameplayStarted()
@@ -197,6 +213,11 @@ public class GameMaster : MonoBehaviour
         PlaySound(clearSound, clearVolume);
     }
 
+    public void PlayExplosionSound()
+    {
+        PlaySound(explosionSound, explosionVolume);
+    }
+
     private void NotifyStatsChanged()
     {
         StatsChanged?.Invoke();
@@ -229,6 +250,7 @@ public class GameMaster : MonoBehaviour
             yield break;
         }
 
+        PlayExplosionSound();
         StartCoroutine(PlayExplosionFlash());
 
         List<ExplosionCube> fragments = new List<ExplosionCube>(cubes.Count);
@@ -461,6 +483,26 @@ public class GameMaster : MonoBehaviour
             });
         return gradient;
     }
+
+#if UNITY_EDITOR
+    private void ResolveAudioClips()
+    {
+        if (placeBlockSound == null)
+        {
+            placeBlockSound = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Sounds/placeBlock.mp3");
+        }
+
+        if (clearSound == null)
+        {
+            clearSound = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Sounds/clear.mp3");
+        }
+
+        if (explosionSound == null)
+        {
+            explosionSound = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Sounds/explosion.mp3");
+        }
+    }
+#endif
 
     private struct ExplosionCube
     {
