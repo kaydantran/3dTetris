@@ -234,6 +234,21 @@ public class TetrisGrid : MonoBehaviour
         return result;
     }
 
+    public bool TryRegisterLockedCube(Transform cube, Vector3Int cell)
+    {
+        if (cube == null || !IsInsideBounds(cell) || !IsCellFree(cell))
+        {
+            return false;
+        }
+
+        EnsureCellArray();
+
+        cube.SetParent(transform, worldPositionStays: true);
+        cube.position = CellToWorldCenter(cell);
+        cells[cell.x, cell.y, cell.z] = cube;
+        return true;
+    }
+
     public List<Transform> ReleaseLockedCubes()
     {
         EnsureCellArray();

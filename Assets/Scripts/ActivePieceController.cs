@@ -55,6 +55,14 @@ public class ActivePieceController : MonoBehaviour
     [Header("Spawn")]
     [Tooltip("How far below the top of the grid (in cells) new pieces spawn.")]
     [SerializeField] private int spawnHeightOffset = 2;
+    [SerializeField] private bool playIntroClearDemo = true;
+    [SerializeField] private float introDemoStartDelay = 0.45f;
+    [SerializeField] private float introDemoEndDelay = 0.2f;
+    [SerializeField] private int introDemoLayerY = 0;
+    [SerializeField] private float introDemoSetInterval = 0.18f;
+    [SerializeField] private float introDemoPieceFallDuration = 0.95f;
+    [SerializeField] private float introDemoSpawnHeight = 10f;
+    [SerializeField] private int introDemoWaveSize = 4;
 
     [Header("Control Keys")]
     [SerializeField] private KeyCode moveLeftKey = KeyCode.A;
@@ -107,6 +115,7 @@ public class ActivePieceController : MonoBehaviour
     private readonly List<int> bagBuffer = new List<int>(7);
     private bool warnedAboutBagSize;
     private int activeRotationState;
+    private int introPiecesInFlight;
 
     private float currentDropInterval;
     private float dropTimer;
@@ -159,6 +168,16 @@ public class ActivePieceController : MonoBehaviour
 
     private void Start()
     {
+        StartCoroutine(BeginGameplaySequence());
+    }
+
+    private IEnumerator BeginGameplaySequence()
+    {
+        if (playIntroClearDemo)
+        {
+            yield return StartCoroutine(PlayIntroClearDemo());
+        }
+
         gameMaster?.OnGameplayStarted();
         SpawnNextBagPiece();
     }
@@ -931,6 +950,163 @@ public class ActivePieceController : MonoBehaviour
     private void SpawnNextBagPiece()
     {
         SpawnPiece(GetNextBagPieceIdentity());
+    }
+
+    private IEnumerator PlayIntroClearDemo()
+    {
+        if (grid == null || piecePrefabs == null || piecePrefabs.Length == 0)
+        {
+            yield break;
+        }
+
+        GameObject introPiecePrefab = ResolveIntroDemoPiecePrefab();
+        if (introPiecePrefab == null)
+        {
+            yield break;
+        }
+
+        int targetLayer = Mathf.Clamp(introDemoLayerY, 0, Mathf.Max(0, grid.Height - 1));
+        List<Vector3Int> introPlacements = BuildIntroDemoPlacements();
+        if (introPlacements.Count == 0)
+        {
+            yield break;
+        }
+
+        if (introDemoStartDelay > 0f)
+        {
+            yield return new WaitForSeconds(introDemoStartDelay);
+        }
+
+        introPiecesInFlight = 0;
+        int placementIndex = 0;
+        bool spawnedFirstWave = false;
+
+        while (placementIndex < introPlacements.Count)
+        {
+            int piecesThisWave = spawnedFirstWave ? Mathf.Max(1, introDemoWaveSize) : 1;
+
+            for (int i = 0; i < piecesThisWave && placementIndex < introPlacements.Count; i++, placementIndex++)
+            {
+                StartCoroutine(AnimateIntroPieceToPlacement(introPiecePrefab, introPlacements[placementIndex], targetLayer));
+            }
+
+            spawnedFirstWave = true;
+
+            if (placementIndex < introPlacements.Count && introDemoSetInterval > 0f)
+            {
+                yield return new WaitForSeconds(introDemoSetInterval);
+            }
+        }
+
+        while (introPiecesInFlight > 0)
+        {
+            yield return null;
+        }
+
+        yield return StartCoroutine(grid.CheckAndClearLayersAnimated(
+            new[] { targetLayer },
+            clearedCount =>
+            {
+                if (clearedCount <= 0) return;
+
+                gameMaster?.PlayClearSound();
+                orbitCamera?.PlayLayerClearImpact();
+            }));
+
+        if (introDemoEndDelay > 0f)
+        {
+            yield return new WaitForSeconds(introDemoEndDelay);
+        }
+    }
+
+    private IEnumerator AnimateIntroPieceToPlacement(GameObject introPiecePrefab, Vector3Int rootCell, int targetLayer)
+    {
+        introPiecesInFlight++;
+
+        Quaternion flatRotation = Quaternion.Euler(90f, 0f, 0f);
+        Vector3 targetPosition = grid.CellToWorldCenter(new Vector3Int(rootCell.x, targetLayer, rootCell.z));
+        Vector3 spawnPosition = targetPosition + Vector3.up * Mathf.Max(1f, introDemoSpawnHeight);
+        GameObject introPiece = Instantiate(introPiecePrefab, spawnPosition, flatRotation);
+        introPiece.name = $"Intro_{introPiecePrefab.name}_{rootCell.x}_{targetLayer}_{rootCell.z}";
+
+        float duration = Mathf.Max(0.05f, introDemoPieceFallDuration);
+        float elapsed = 0f;
+
+        while (elapsed < duration)
+        {
+            if (introPiece == null)
+            {
+                introPiecesInFlight = Mathf.Max(0, introPiecesInFlight - 1);
+                yield break;
+            }
+
+            elapsed += Time.deltaTime;
+            float normalized = Mathf.Clamp01(elapsed / duration);
+            float eased = 1f - Mathf.Pow(1f - normalized, 3f);
+            introPiece.transform.position = Vector3.Lerp(spawnPosition, targetPosition, eased);
+            yield return null;
+        }
+
+        if (introPiece != null)
+        {
+            introPiece.transform.SetPositionAndRotation(targetPosition, flatRotation);
+            grid.LockPiece(introPiece.transform);
+        }
+
+        introPiecesInFlight = Mathf.Max(0, introPiecesInFlight - 1);
+    }
+
+    private GameObject ResolveIntroDemoPiecePrefab()
+    {
+        foreach (GameObject piecePrefab in piecePrefabs)
+        {
+            if (piecePrefab == null) continue;
+            if (piecePrefab.name.IndexOf("PieceO", StringComparison.OrdinalIgnoreCase) >= 0) return piecePrefab;
+        }
+
+        Debug.LogWarning("Intro clear demo requires a PieceO prefab in piecePrefabs.");
+        return null;
+    }
+
+    private List<Vector3Int> BuildIntroDemoPlacements()
+    {
+        List<Vector3Int> placements = new List<Vector3Int>();
+
+        if (grid.Width % 2 != 0 || grid.Depth % 2 != 0)
+        {
+            Debug.LogWarning("Intro clear demo requires even grid width and depth to tile the layer with O pieces.");
+            return placements;
+        }
+
+        int tileCountX = grid.Width / 2;
+        int tileCountZ = grid.Depth / 2;
+        int centerTileX = tileCountX / 2;
+        int centerTileZ = tileCountZ / 2;
+
+        for (int tileX = 0; tileX < tileCountX; tileX++)
+        {
+            for (int tileZ = 0; tileZ < tileCountZ; tileZ++)
+            {
+                placements.Add(new Vector3Int(tileX * 2, 0, tileZ * 2));
+            }
+        }
+
+        placements.Sort((a, b) =>
+        {
+            int aTileX = a.x / 2;
+            int aTileZ = a.z / 2;
+            int bTileX = b.x / 2;
+            int bTileZ = b.z / 2;
+
+            int aDistance = Mathf.Abs(aTileX - centerTileX) + Mathf.Abs(aTileZ - centerTileZ);
+            int bDistance = Mathf.Abs(bTileX - centerTileX) + Mathf.Abs(bTileZ - centerTileZ);
+            if (aDistance != bDistance) return aDistance.CompareTo(bDistance);
+
+            if (aTileZ != bTileZ) return aTileZ.CompareTo(bTileZ);
+            return aTileX.CompareTo(bTileX);
+        });
+
+        return placements;
     }
 
     private PieceIdentity GetNextBagPieceIdentity()
