@@ -304,6 +304,8 @@ MonoBehaviour:
   gameOverShakeDuration: 0.45
   gameOverShakeFrequency: 18
   gameOverShakeRollDegrees: 2.5
+  gameOverSecondaryShakeFrequency: 67
+  gameOverSecondaryShakeWeight: 0.5
 --- !u!114 &1206521279
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -530,6 +532,14 @@ MonoBehaviour:
   baseLockDelay: 0.5
   maxLockResets: 15
   spawnHeightOffset: 2
+  playIntroClearDemo: 1
+  introDemoStartDelay: 0.45
+  introDemoEndDelay: 0.2
+  introDemoLayerY: 0
+  introDemoSetInterval: 0.18
+  introDemoPieceFallDuration: 0.95
+  introDemoSpawnHeight: 10
+  introDemoWaveSize: 4
   moveLeftKey: 97
   moveRightKey: 100
   moveInwardKey: 115
@@ -580,6 +590,9 @@ MonoBehaviour:
   clearVolume: 0.75
   gameOverLaunchDelay: 1
   explosionDuration: 3
+  gameOverSlowMotionScale: 0.2
+  gameOverFlashPeakAlpha: 0.92
+  gameOverFlashDuration: 0.16
   minLaunchSpeed: 8
   maxLaunchSpeed: 16
   upwardLaunchBias: 1.15
