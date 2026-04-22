@@ -66,7 +66,9 @@ public class GameMaster : MonoBehaviour
     private Canvas flashCanvas;
     private Image flashImage;
     private float timeScaleBeforeSlowMotion = 1f;
+    private float timeScaleBeforePause = 1f;
     private bool isSlowMotionActive;
+    private bool isPaused;
 
     public int Score => score;
     public int TotalLayersCleared => totalLayersCleared;
@@ -74,8 +76,10 @@ public class GameMaster : MonoBehaviour
     public float ElapsedGameplayTime => isGameOver ? finalElapsedGameplayTime : CalculateElapsedGameplayTime();
     public float PiecesPerSecond => isGameOver ? finalPiecesPerSecond : CalculatePiecesPerSecond();
     public bool IsGameOver => isGameOver;
+    public bool IsPaused => isPaused;
 
     public event Action StatsChanged;
+    public event Action PauseStateChanged;
 
     private void Awake()
     {
@@ -116,6 +120,7 @@ public class GameMaster : MonoBehaviour
 
     private void OnDestroy()
     {
+        ResumeFromPauseIfNeeded();
         RestoreTimeScale();
 
         if (trailMaterial != null)
@@ -196,11 +201,46 @@ public class GameMaster : MonoBehaviour
     {
         if (isGameOver) return;
 
+        ResumeFromPauseIfNeeded();
+
         finalElapsedGameplayTime = CalculateElapsedGameplayTime();
         finalPiecesPerSecond = CalculatePiecesPerSecond();
         isGameOver = true;
         NotifyStatsChanged();
         Debug.Log($"Game Over: {reason}");
+    }
+
+    public void TogglePause()
+    {
+        SetPaused(!isPaused);
+    }
+
+    public void SetPaused(bool paused)
+    {
+        if (paused && (isGameOver || isSlowMotionActive))
+        {
+            return;
+        }
+
+        if (isPaused == paused)
+        {
+            return;
+        }
+
+        if (paused)
+        {
+            timeScaleBeforePause = Time.timeScale;
+            Time.timeScale = 0f;
+            isPaused = true;
+        }
+        else
+        {
+            Time.timeScale = timeScaleBeforePause;
+            isPaused = false;
+        }
+
+        PauseStateChanged?.Invoke();
+        NotifyStatsChanged();
     }
 
     public void PlayGameOverExplosion(string reason, Vector3 explosionOrigin, OrbitCamera orbitCamera, IEnumerable<Transform> cubes)
@@ -297,6 +337,18 @@ public class GameMaster : MonoBehaviour
     private void NotifyStatsChanged()
     {
         StatsChanged?.Invoke();
+    }
+
+    private void ResumeFromPauseIfNeeded()
+    {
+        if (!isPaused)
+        {
+            return;
+        }
+
+        Time.timeScale = timeScaleBeforePause;
+        isPaused = false;
+        PauseStateChanged?.Invoke();
     }
 
     private void PlaySound(AudioClip clip, float volume)

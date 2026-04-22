@@ -214,6 +214,12 @@ public class ActivePieceController : MonoBehaviour
     private void Update()
     {
         if (activePiece == null) return;
+        if (gameMaster != null && gameMaster.IsPaused)
+        {
+            softDropHeld = false;
+            ResetHeldMoveStates();
+            return;
+        }
 
         HandleInput();
         HandleGravity();
@@ -2096,6 +2102,7 @@ public class ActivePieceController : MonoBehaviour
     }
 
     public bool HasHeldPiece => hasHeldPiece;
+    public bool CanUseHold => activePiece != null && !hasSwappedThisDrop;
     public int HeldPiecePrefabIndex => hasHeldPiece ? heldPieceIdentity.PrefabIndex : -1;
     public int PreviewPieceCount => ModernPreviewCount;
 

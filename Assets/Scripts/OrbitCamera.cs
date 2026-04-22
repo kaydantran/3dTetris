@@ -11,6 +11,7 @@ public class OrbitCamera : MonoBehaviour
     [SerializeField] private Transform target;
     [Tooltip("Fallback grid reference — used to auto-compute the target if 'target' is null.")]
     [SerializeField] private TetrisGrid grid;
+    [SerializeField] private GameMaster gameMaster;
 
     [Header("Orbit")]
     [SerializeField] private float distance = 24f;
@@ -73,6 +74,11 @@ public class OrbitCamera : MonoBehaviour
         {
             grid = FindAnyObjectByType<TetrisGrid>();
         }
+
+        if (gameMaster == null)
+        {
+            gameMaster = FindAnyObjectByType<GameMaster>();
+        }
     }
 
     private void Start()
@@ -89,6 +95,13 @@ public class OrbitCamera : MonoBehaviour
     private void LateUpdate()
     {
         ResolveTargetPoint();
+
+        if (gameMaster != null && gameMaster.IsPaused)
+        {
+            ApplyTransformImmediate();
+            return;
+        }
+
         HandleInput();
         SmoothTransform();
         ApplyImpactShake();

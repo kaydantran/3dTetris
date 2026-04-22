@@ -22,8 +22,11 @@ public class GameplayHudController : MonoBehaviour
     private static readonly Color NextPanelBackgroundColor = new Color(1f, 1f, 1f, 0f);
     private static readonly Color NextPanelInnerColor = new Color(1f, 1f, 1f, 0f);
     private static readonly Color NextPanelOutlineColor = new Color(0.95f, 0.98f, 1f, 0.95f);
-    private static readonly Color NextPanelBevelColor = new Color(1f, 1f, 1f, 0f);
+    private static readonly Color NextPanelBevelColor = new Color(0.72f, 0.88f, 1f, 0.28f);
+    private static readonly Color HoldPreviewGhostTint = new Color(0.88f, 0.95f, 1f, 0.38f);
     private static readonly Color NextPanelInnerOutlineColor = new Color(1f, 1f, 1f, 0f);
+    private const float NextPanelBorderThickness = 3f;
+    private const float SceneNextSlotHeight = 120f;
     private static readonly Vector2Int[] EmptyCells = Array.Empty<Vector2Int>();
     private static readonly Dictionary<string, PreviewDefinition> PreviewDefinitions = new Dictionary<string, PreviewDefinition>(StringComparer.OrdinalIgnoreCase)
     {
@@ -56,12 +59,17 @@ public class GameplayHudController : MonoBehaviour
     [SerializeField] private TMP_Text scoreNumberTmpText;
     [SerializeField] private TMP_Text timeNumberTmpText;
     [SerializeField] private TMP_Text nextTextTmpText;
+    [SerializeField] private TMP_Text holdTextTmpText;
     [SerializeField] private Text scoreNumberText;
     [SerializeField] private Text timeNumberText;
 
     private Canvas canvas;
     private RectTransform hudRoot;
+    private RectTransform holdRoot;
     private RectTransform nextPiecesRoot;
+    private RectTransform controlsShownRoot;
+    private RectTransform controlsHiddenRoot;
+    private RectTransform sceneHoldPreviewPanel;
     private RectTransform sceneNextPreviewPanel;
     private Font uiFont;
     private Text scoreValueText;
@@ -71,9 +79,17 @@ public class GameplayHudController : MonoBehaviour
     private InputField dasInputField;
     private InputField arrInputField;
     private PiecePreviewWidget holdPreviewWidget;
+    private RawImage sceneHoldPreviewSlot;
     private readonly List<PiecePreviewWidget> nextPreviewWidgets = new List<PiecePreviewWidget>();
     private readonly List<RawImage> sceneNextPreviewSlots = new List<RawImage>();
+    private Material holdPreviewGhostMaterial;
+    private bool areControlsExpanded;
     private bool isBound;
+    private RectTransform pauseOverlayRoot;
+    private Text pauseScoreValueText;
+    private Text pauseTimeValueText;
+    private Text pauseLinesValueText;
+    private Text pausePiecesPerSecondValueText;
     private const string PreferredBuiltinFontPath = "LegacyRuntime.ttf";
     private const string FallbackBuiltinFontPath = "Arial.ttf";
 
@@ -125,6 +141,8 @@ public class GameplayHudController : MonoBehaviour
             BindEvents();
         }
 
+        HandlePauseToggleInput();
+        HandleControlsToggleInput();
         RefreshTimeDisplay();
         RefreshPiecesPerSecond();
     }
@@ -134,11 +152,21 @@ public class GameplayHudController : MonoBehaviour
         UnbindEvents();
     }
 
+    private void OnDestroy()
+    {
+        if (holdPreviewGhostMaterial != null)
+        {
+            Destroy(holdPreviewGhostMaterial);
+        }
+    }
+
     private void EnsureUi()
     {
         ResolveHudBindings();
         BuildUi();
+        EnsureSceneHoldPreviewPanel();
         EnsureSceneNextPreviewPanel();
+        EnsurePauseOverlay();
 
         if (canvas != null)
         {
@@ -162,6 +190,9 @@ public class GameplayHudController : MonoBehaviour
             Stretch(hudRoot);
             hudRoot.SetAsLastSibling();
         }
+
+        ApplyControlsVisibility();
+        ApplyPauseOverlayState();
     }
 
     private void ResolveReferences()
@@ -233,12 +264,39 @@ public class GameplayHudController : MonoBehaviour
             nextPiecesRoot = nextPiecesTransform as RectTransform;
         }
 
+        if (holdRoot == null)
+        {
+            Transform holdTransform = FindDescendantByName(canvas.transform, "Hold");
+            holdRoot = holdTransform as RectTransform;
+        }
+
+        if (controlsShownRoot == null)
+        {
+            Transform controlsShownTransform = FindDescendantByName(canvas.transform, "ControlsShown");
+            controlsShownRoot = controlsShownTransform as RectTransform;
+        }
+
+        if (controlsHiddenRoot == null)
+        {
+            Transform controlsHiddenTransform = FindDescendantByName(canvas.transform, "ControlsHidden");
+            controlsHiddenRoot = controlsHiddenTransform as RectTransform;
+        }
+
         if (nextTextTmpText == null)
         {
             Transform nextTextTransform = FindDescendantByName(canvas.transform, "NextText");
             if (nextTextTransform != null)
             {
                 nextTextTmpText = nextTextTransform.GetComponent<TMP_Text>();
+            }
+        }
+
+        if (holdTextTmpText == null)
+        {
+            Transform holdTextTransform = FindDescendantByName(canvas.transform, "HoldText");
+            if (holdTextTransform != null)
+            {
+                holdTextTmpText = holdTextTransform.GetComponent<TMP_Text>();
             }
         }
     }
@@ -250,6 +308,7 @@ public class GameplayHudController : MonoBehaviour
         pieceController.StateChanged += RefreshAll;
         pieceController.TimingSettingsChanged += RefreshTimingFields;
         gameMaster.StatsChanged += RefreshStats;
+        gameMaster.PauseStateChanged += ApplyPauseOverlayState;
         isBound = true;
     }
 
@@ -266,6 +325,7 @@ public class GameplayHudController : MonoBehaviour
         if (gameMaster != null)
         {
             gameMaster.StatsChanged -= RefreshStats;
+            gameMaster.PauseStateChanged -= ApplyPauseOverlayState;
         }
 
         isBound = false;
@@ -323,13 +383,18 @@ public class GameplayHudController : MonoBehaviour
 
         Stretch(hudRoot);
 
-        RectTransform holdPanel = CreatePanel("HoldPanel", hudRoot, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(24f, -24f), new Vector2(220f, 250f));
+        RectTransform holdPanel = holdRoot == null
+            ? CreatePanel("HoldPanel", hudRoot, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(24f, -24f), new Vector2(220f, 250f))
+            : null;
         RectTransform statsPanel = CreatePanel("StatsPanel", hudRoot, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -24f), new Vector2(360f, 250f));
         RectTransform nextPanel = nextPiecesRoot == null
             ? CreatePanel("NextPanel", hudRoot, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-24f, -24f), new Vector2(220f, 640f))
             : null;
 
-        BuildHoldPanel(holdPanel);
+        if (holdPanel != null)
+        {
+            BuildHoldPanel(holdPanel);
+        }
         BuildStatsPanel(statsPanel);
         if (nextPanel != null)
         {
@@ -413,9 +478,22 @@ public class GameplayHudController : MonoBehaviour
     {
         if (pieceController == null) return;
 
+        string heldPieceCode = pieceController.GetHeldPieceCode();
+        Texture heldPreviewTexture = GetPreviewTexture(heldPieceCode);
+        bool showHeldGhostState = !pieceController.CanUseHold && !string.IsNullOrWhiteSpace(heldPieceCode);
+
         if (holdPreviewWidget != null)
         {
-            holdPreviewWidget.SetPiece(pieceController.GetHeldPieceCode());
+            holdPreviewWidget.SetPiece(heldPieceCode, heldPreviewTexture, showHeldGhostState);
+        }
+
+        if (sceneHoldPreviewSlot != null)
+        {
+            sceneHoldPreviewSlot.texture = heldPreviewTexture;
+            sceneHoldPreviewSlot.color = string.IsNullOrWhiteSpace(heldPieceCode)
+                ? new Color(1f, 1f, 1f, 0f)
+                : showHeldGhostState ? HoldPreviewGhostTint : Color.white;
+            sceneHoldPreviewSlot.material = showHeldGhostState ? GetOrCreateHoldPreviewGhostMaterial() : null;
         }
 
         string[] upcomingCodes = pieceController.GetUpcomingPieceCodes(pieceController.PreviewPieceCount);
@@ -444,6 +522,11 @@ public class GameplayHudController : MonoBehaviour
             scoreValueText.text = gameMaster.Score.ToString();
         }
 
+        if (pauseScoreValueText != null)
+        {
+            pauseScoreValueText.text = gameMaster.Score.ToString();
+        }
+
         if (scoreNumberTmpText != null)
         {
             scoreNumberTmpText.text = gameMaster.Score.ToString();
@@ -461,14 +544,28 @@ public class GameplayHudController : MonoBehaviour
             linesValueText.text = gameMaster.TotalLayersCleared.ToString();
         }
 
+        if (pauseLinesValueText != null)
+        {
+            pauseLinesValueText.text = gameMaster.TotalLayersCleared.ToString();
+        }
+
         RefreshPiecesPerSecond();
     }
 
     private void RefreshPiecesPerSecond()
     {
-        if (piecesPerSecondValueText == null || gameMaster == null) return;
+        if (gameMaster == null) return;
 
-        piecesPerSecondValueText.text = gameMaster.PiecesPerSecond.ToString("0.00");
+        string piecesPerSecondText = gameMaster.PiecesPerSecond.ToString("0.00");
+        if (piecesPerSecondValueText != null)
+        {
+            piecesPerSecondValueText.text = piecesPerSecondText;
+        }
+
+        if (pausePiecesPerSecondValueText != null)
+        {
+            pausePiecesPerSecondValueText.text = piecesPerSecondText;
+        }
     }
 
     private void RefreshTimeDisplay()
@@ -480,6 +577,11 @@ public class GameplayHudController : MonoBehaviour
         if (timeValueText != null)
         {
             timeValueText.text = formattedTime;
+        }
+
+        if (pauseTimeValueText != null)
+        {
+            pauseTimeValueText.text = formattedTime;
         }
 
         if (timeNumberTmpText != null)
@@ -549,10 +651,13 @@ public class GameplayHudController : MonoBehaviour
             sceneNextPreviewPanel = CreateUiObject("NextPreviewPanel", nextPiecesRoot);
         }
 
+        RectTransform nextTextRect = nextTextTmpText != null ? nextTextTmpText.rectTransform : null;
         sceneNextPreviewPanel.anchorMin = new Vector2(1f, 1f);
         sceneNextPreviewPanel.anchorMax = new Vector2(1f, 1f);
         sceneNextPreviewPanel.pivot = new Vector2(1f, 1f);
-        sceneNextPreviewPanel.anchoredPosition = new Vector2(0f, -66f);
+        sceneNextPreviewPanel.anchoredPosition = nextTextRect != null
+            ? new Vector2(nextTextRect.anchoredPosition.x, nextTextRect.anchoredPosition.y - nextTextRect.sizeDelta.y - 6f)
+            : new Vector2(0f, -56f);
         sceneNextPreviewPanel.sizeDelta = new Vector2(225f, 692f);
 
         Image background = sceneNextPreviewPanel.GetComponent<Image>();
@@ -564,23 +669,12 @@ public class GameplayHudController : MonoBehaviour
         background.color = NextPanelBackgroundColor;
         background.raycastTarget = false;
 
-        Outline outline = sceneNextPreviewPanel.GetComponent<Outline>();
-        if (outline == null)
-        {
-            outline = sceneNextPreviewPanel.gameObject.AddComponent<Outline>();
-        }
-
-        outline.effectColor = NextPanelOutlineColor;
-        outline.effectDistance = new Vector2(1f, -1f);
-
-        Shadow bevelShadow = sceneNextPreviewPanel.GetComponent<Shadow>();
-        if (bevelShadow == null)
-        {
-            bevelShadow = sceneNextPreviewPanel.gameObject.AddComponent<Shadow>();
-        }
-
-        bevelShadow.effectColor = NextPanelBevelColor;
-        bevelShadow.effectDistance = Vector2.zero;
+        CreateOrUpdateBorderSegment(sceneNextPreviewPanel, "BorderTop", new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, 0f), new Vector2(0f, NextPanelBorderThickness), NextPanelOutlineColor);
+        CreateOrUpdateBorderSegment(sceneNextPreviewPanel, "BorderBottom", new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 0f), new Vector2(0f, NextPanelBorderThickness), NextPanelOutlineColor);
+        CreateOrUpdateBorderSegment(sceneNextPreviewPanel, "BorderLeft", new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(0f, 0f), new Vector2(NextPanelBorderThickness, 0f), NextPanelOutlineColor);
+        CreateOrUpdateBorderSegment(sceneNextPreviewPanel, "BorderRight", new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(1f, 0.5f), new Vector2(0f, 0f), new Vector2(NextPanelBorderThickness, 0f), NextPanelOutlineColor);
+        CreateOrUpdateBorderSegment(sceneNextPreviewPanel, "BevelTop", new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -NextPanelBorderThickness), new Vector2(0f, 1f), NextPanelBevelColor);
+        CreateOrUpdateBorderSegment(sceneNextPreviewPanel, "BevelLeft", new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(NextPanelBorderThickness, 0f), new Vector2(1f, 0f), NextPanelBevelColor);
 
         RectTransform innerPanel = sceneNextPreviewPanel.Find("InnerPanel") as RectTransform;
         if (innerPanel == null)
@@ -598,51 +692,6 @@ public class GameplayHudController : MonoBehaviour
 
         innerPanelImage.color = NextPanelInnerColor;
         innerPanelImage.raycastTarget = false;
-
-        Outline innerPanelOutline = innerPanel.GetComponent<Outline>();
-        if (innerPanelOutline == null)
-        {
-            innerPanelOutline = innerPanel.gameObject.AddComponent<Outline>();
-        }
-
-        innerPanelOutline.effectColor = NextPanelInnerOutlineColor;
-        innerPanelOutline.effectDistance = Vector2.zero;
-
-        Shadow innerPanelBevelShadow = innerPanel.GetComponent<Shadow>();
-        if (innerPanelBevelShadow == null)
-        {
-            innerPanelBevelShadow = innerPanel.gameObject.AddComponent<Shadow>();
-        }
-
-        innerPanelBevelShadow.effectColor = new Color(1f, 1f, 1f, 0f);
-        innerPanelBevelShadow.effectDistance = Vector2.zero;
-
-        RectTransform bevelHighlight = innerPanel.Find("BevelHighlight") as RectTransform;
-        if (bevelHighlight == null)
-        {
-            bevelHighlight = CreateUiObject("BevelHighlight", innerPanel);
-        }
-
-        bevelHighlight.SetAsFirstSibling();
-        Stretch(bevelHighlight, 0f, 0f, 0f, 0f);
-
-        Image bevelHighlightImage = bevelHighlight.GetComponent<Image>();
-        if (bevelHighlightImage == null)
-        {
-            bevelHighlightImage = bevelHighlight.gameObject.AddComponent<Image>();
-        }
-
-        bevelHighlightImage.color = new Color(1f, 1f, 1f, 0f);
-        bevelHighlightImage.raycastTarget = false;
-
-        Outline bevelHighlightOutline = bevelHighlight.GetComponent<Outline>();
-        if (bevelHighlightOutline == null)
-        {
-            bevelHighlightOutline = bevelHighlight.gameObject.AddComponent<Outline>();
-        }
-
-        bevelHighlightOutline.effectColor = new Color(1f, 1f, 1f, 0f);
-        bevelHighlightOutline.effectDistance = Vector2.zero;
 
         RectTransform stackRoot = innerPanel.Find("PreviewStack") as RectTransform;
         if (stackRoot == null)
@@ -676,7 +725,7 @@ public class GameplayHudController : MonoBehaviour
                 slotRoot = CreateUiObject(slotName, stackRoot);
             }
 
-            AddLayoutElement(slotRoot.gameObject, 0f, 120f);
+            AddLayoutElement(slotRoot.gameObject, 0f, SceneNextSlotHeight);
 
             Image slotBackground = slotRoot.GetComponent<Image>();
             if (slotBackground == null)
@@ -718,6 +767,100 @@ public class GameplayHudController : MonoBehaviour
             previewImage.raycastTarget = false;
             sceneNextPreviewSlots.Add(previewImage);
         }
+    }
+
+    private void EnsureSceneHoldPreviewPanel()
+    {
+        if (holdRoot == null)
+        {
+            return;
+        }
+
+        sceneHoldPreviewPanel = holdRoot.Find("HoldPreviewPanel") as RectTransform;
+        if (sceneHoldPreviewPanel == null)
+        {
+            sceneHoldPreviewPanel = CreateUiObject("HoldPreviewPanel", holdRoot);
+        }
+
+        RectTransform holdTextRect = holdTextTmpText != null ? holdTextTmpText.rectTransform : null;
+        sceneHoldPreviewPanel.anchorMin = new Vector2(0f, 1f);
+        sceneHoldPreviewPanel.anchorMax = new Vector2(0f, 1f);
+        sceneHoldPreviewPanel.pivot = new Vector2(0f, 1f);
+        sceneHoldPreviewPanel.anchoredPosition = holdTextRect != null
+            ? new Vector2(holdTextRect.anchoredPosition.x, holdTextRect.anchoredPosition.y - holdTextRect.sizeDelta.y - 6f)
+            : new Vector2(0f, -41f);
+        sceneHoldPreviewPanel.sizeDelta = new Vector2(225f, 168f);
+
+        Image background = sceneHoldPreviewPanel.GetComponent<Image>();
+        if (background == null)
+        {
+            background = sceneHoldPreviewPanel.gameObject.AddComponent<Image>();
+        }
+
+        background.color = NextPanelBackgroundColor;
+        background.raycastTarget = false;
+
+        CreateOrUpdateBorderSegment(sceneHoldPreviewPanel, "BorderTop", new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, 0f), new Vector2(0f, NextPanelBorderThickness), NextPanelOutlineColor);
+        CreateOrUpdateBorderSegment(sceneHoldPreviewPanel, "BorderBottom", new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 0f), new Vector2(0f, NextPanelBorderThickness), NextPanelOutlineColor);
+        CreateOrUpdateBorderSegment(sceneHoldPreviewPanel, "BorderLeft", new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(0f, 0f), new Vector2(NextPanelBorderThickness, 0f), NextPanelOutlineColor);
+        CreateOrUpdateBorderSegment(sceneHoldPreviewPanel, "BorderRight", new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(1f, 0.5f), new Vector2(0f, 0f), new Vector2(NextPanelBorderThickness, 0f), NextPanelOutlineColor);
+        CreateOrUpdateBorderSegment(sceneHoldPreviewPanel, "BevelTop", new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -NextPanelBorderThickness), new Vector2(0f, 1f), NextPanelBevelColor);
+        CreateOrUpdateBorderSegment(sceneHoldPreviewPanel, "BevelLeft", new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(NextPanelBorderThickness, 0f), new Vector2(1f, 0f), NextPanelBevelColor);
+
+        RectTransform innerPanel = sceneHoldPreviewPanel.Find("InnerPanel") as RectTransform;
+        if (innerPanel == null)
+        {
+            innerPanel = CreateUiObject("InnerPanel", sceneHoldPreviewPanel);
+        }
+
+        Stretch(innerPanel, 2f, 2f, 2f, 2f);
+
+        Image innerPanelImage = innerPanel.GetComponent<Image>();
+        if (innerPanelImage == null)
+        {
+            innerPanelImage = innerPanel.gameObject.AddComponent<Image>();
+        }
+
+        innerPanelImage.color = NextPanelInnerColor;
+        innerPanelImage.raycastTarget = false;
+
+        RectTransform previewRoot = innerPanel.Find("PreviewSlot") as RectTransform;
+        if (previewRoot == null)
+        {
+            previewRoot = CreateUiObject("PreviewSlot", innerPanel);
+        }
+
+        Stretch(previewRoot, 12f, 12f, 12f, 12f);
+
+        RectTransform previewImageRect = previewRoot.Find("PreviewImage") as RectTransform;
+        if (previewImageRect == null)
+        {
+            previewImageRect = CreateUiObject("PreviewImage", previewRoot);
+        }
+
+        previewImageRect.anchorMin = new Vector2(0.5f, 0.5f);
+        previewImageRect.anchorMax = new Vector2(0.5f, 0.5f);
+        previewImageRect.pivot = new Vector2(0.5f, 0.5f);
+        previewImageRect.anchoredPosition = Vector2.zero;
+        previewImageRect.sizeDelta = new Vector2(112f, 112f);
+
+        AspectRatioFitter aspectRatioFitter = previewImageRect.GetComponent<AspectRatioFitter>();
+        if (aspectRatioFitter == null)
+        {
+            aspectRatioFitter = previewImageRect.gameObject.AddComponent<AspectRatioFitter>();
+        }
+
+        aspectRatioFitter.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
+        aspectRatioFitter.aspectRatio = 1f;
+
+        sceneHoldPreviewSlot = previewImageRect.GetComponent<RawImage>();
+        if (sceneHoldPreviewSlot == null)
+        {
+            sceneHoldPreviewSlot = previewImageRect.gameObject.AddComponent<RawImage>();
+        }
+
+        sceneHoldPreviewSlot.color = new Color(1f, 1f, 1f, 0f);
+        sceneHoldPreviewSlot.raycastTarget = false;
     }
 
     private void ResolvePreviewSprites()
@@ -776,6 +919,183 @@ public class GameplayHudController : MonoBehaviour
     private void HandleArrEdited(string value)
     {
         ApplyTimingInput(value, ms => pieceController.AutoRepeatRateMilliseconds = ms);
+    }
+
+    private void HandlePauseToggleInput()
+    {
+        if (gameMaster == null || gameMaster.IsGameOver || !Input.GetKeyDown(KeyCode.Escape))
+        {
+            return;
+        }
+
+        gameMaster.TogglePause();
+    }
+
+    public void ShowControls()
+    {
+        areControlsExpanded = true;
+        ApplyControlsVisibility();
+    }
+
+    public void HideControls()
+    {
+        areControlsExpanded = false;
+        ApplyControlsVisibility();
+    }
+
+    public void ToggleControls()
+    {
+        areControlsExpanded = !areControlsExpanded;
+        ApplyControlsVisibility();
+    }
+
+    private void EnsurePauseOverlay()
+    {
+        if (hudRoot == null)
+        {
+            return;
+        }
+
+        if (pauseOverlayRoot != null)
+        {
+            return;
+        }
+
+        pauseOverlayRoot = CreateUiObject("PauseOverlay", hudRoot);
+        Stretch(pauseOverlayRoot);
+        pauseOverlayRoot.SetAsLastSibling();
+
+        Image overlayImage = pauseOverlayRoot.gameObject.AddComponent<Image>();
+        overlayImage.color = new Color(0f, 0.02f, 0.05f, 0.72f);
+        overlayImage.raycastTarget = true;
+
+        RectTransform pauseWindow = CreatePanel(
+            "PauseWindow",
+            pauseOverlayRoot,
+            new Vector2(0.5f, 0.5f),
+            new Vector2(0.5f, 0.5f),
+            Vector2.zero,
+            new Vector2(460f, 360f));
+
+        VerticalLayoutGroup layout = pauseWindow.gameObject.AddComponent<VerticalLayoutGroup>();
+        layout.padding = new RectOffset(20, 20, 20, 20);
+        layout.spacing = 12f;
+        layout.childAlignment = TextAnchor.UpperCenter;
+        layout.childForceExpandWidth = true;
+        layout.childForceExpandHeight = false;
+        layout.childControlWidth = true;
+        layout.childControlHeight = false;
+
+        Text pauseTitle = CreateText(pauseWindow, "PauseTitle", "PAUSED", 26, FontStyle.Bold, TextColor, TextAnchor.MiddleCenter);
+        AddLayoutElement(pauseTitle.gameObject, 0f, 34f);
+
+        Text pauseHint = CreateText(pauseWindow, "PauseHint", "Press Esc to resume", 14, FontStyle.Italic, AccentColor, TextAnchor.MiddleCenter);
+        AddLayoutElement(pauseHint.gameObject, 0f, 22f);
+
+        RectTransform runDataPanel = CreateUiObject("PauseRunDataPanel", pauseWindow);
+        AddLayoutElement(runDataPanel.gameObject, 0f, 220f);
+
+        Image runDataPanelBackground = runDataPanel.gameObject.AddComponent<Image>();
+        runDataPanelBackground.color = PanelColor;
+
+        Outline runDataPanelOutline = runDataPanel.gameObject.AddComponent<Outline>();
+        runDataPanelOutline.effectColor = new Color(AccentColor.r, AccentColor.g, AccentColor.b, 0.18f);
+        runDataPanelOutline.effectDistance = new Vector2(1f, -1f);
+
+        BuildPauseRunDataPanel(runDataPanel);
+    }
+
+    private void BuildPauseRunDataPanel(RectTransform panel)
+    {
+        VerticalLayoutGroup layout = panel.gameObject.AddComponent<VerticalLayoutGroup>();
+        layout.padding = new RectOffset(18, 18, 16, 18);
+        layout.spacing = 10f;
+        layout.childAlignment = TextAnchor.UpperLeft;
+        layout.childForceExpandWidth = true;
+        layout.childForceExpandHeight = false;
+
+        CreateSectionTitle(panel, "RUN DATA");
+        CreateStatRow(panel, "Score", out pauseScoreValueText);
+        CreateStatRow(panel, "Time", out pauseTimeValueText);
+        CreateStatRow(panel, "Lines Cleared", out pauseLinesValueText);
+        CreateStatRow(panel, "Pieces / Sec", out pausePiecesPerSecondValueText);
+    }
+
+    private void ApplyPauseOverlayState()
+    {
+        if (pauseOverlayRoot == null)
+        {
+            return;
+        }
+
+        bool isPaused = gameMaster != null && gameMaster.IsPaused;
+        pauseOverlayRoot.gameObject.SetActive(isPaused);
+
+        if (isPaused)
+        {
+            pauseOverlayRoot.SetAsLastSibling();
+        }
+    }
+
+    private void HandleControlsToggleInput()
+    {
+        if (!Input.GetKeyDown(KeyCode.Tab) || IsTextInputFocused())
+        {
+            return;
+        }
+
+        ToggleControls();
+    }
+
+    private void ApplyControlsVisibility()
+    {
+        if (controlsShownRoot != null)
+        {
+            controlsShownRoot.gameObject.SetActive(areControlsExpanded);
+        }
+
+        if (controlsHiddenRoot != null)
+        {
+            controlsHiddenRoot.gameObject.SetActive(!areControlsExpanded);
+        }
+    }
+
+    private Material GetOrCreateHoldPreviewGhostMaterial()
+    {
+        if (holdPreviewGhostMaterial != null)
+        {
+            return holdPreviewGhostMaterial;
+        }
+
+        Shader uiShader = Shader.Find("UI/Default");
+        if (uiShader == null)
+        {
+            return null;
+        }
+
+        holdPreviewGhostMaterial = new Material(uiShader)
+        {
+            name = "HoldPreviewGhostMaterial"
+        };
+        holdPreviewGhostMaterial.color = HoldPreviewGhostTint;
+        return holdPreviewGhostMaterial;
+    }
+
+    private static bool IsTextInputFocused()
+    {
+        if (EventSystem.current == null)
+        {
+            return false;
+        }
+
+        GameObject selectedObject = EventSystem.current.currentSelectedGameObject;
+        if (selectedObject == null)
+        {
+            return false;
+        }
+
+        return selectedObject.GetComponent<InputField>() != null
+            || selectedObject.GetComponent<TMP_InputField>() != null;
     }
 
     private void ApplyTimingInput(string value, Action<float> applyAction)
@@ -947,6 +1267,39 @@ public class GameplayHudController : MonoBehaviour
             layoutElement.preferredHeight = preferredHeight;
             layoutElement.minHeight = preferredHeight;
         }
+    }
+
+    private static void CreateOrUpdateBorderSegment(
+        RectTransform parent,
+        string name,
+        Vector2 anchorMin,
+        Vector2 anchorMax,
+        Vector2 pivot,
+        Vector2 anchoredPosition,
+        Vector2 sizeDelta,
+        Color color)
+    {
+        RectTransform segment = parent.Find(name) as RectTransform;
+        if (segment == null)
+        {
+            segment = CreateUiObject(name, parent);
+        }
+
+        segment.SetAsFirstSibling();
+        segment.anchorMin = anchorMin;
+        segment.anchorMax = anchorMax;
+        segment.pivot = pivot;
+        segment.anchoredPosition = anchoredPosition;
+        segment.sizeDelta = sizeDelta;
+
+        Image image = segment.GetComponent<Image>();
+        if (image == null)
+        {
+            image = segment.gameObject.AddComponent<Image>();
+        }
+
+        image.color = color;
+        image.raycastTarget = false;
     }
 
     private static void Stretch(RectTransform rectTransform, float left = 0f, float right = 0f, float top = 0f, float bottom = 0f)
@@ -1126,16 +1479,19 @@ public class GameplayHudController : MonoBehaviour
             SetPiece(string.Empty);
         }
 
-        public void SetPiece(string pieceCode, Texture previewTexture = null)
+        public void SetPiece(string pieceCode, Texture previewTexture = null, bool useGhostLook = false)
         {
             string normalizedCode = string.IsNullOrWhiteSpace(pieceCode) ? string.Empty : pieceCode.Trim().ToUpperInvariant();
             PreviewDefinition definition = default;
             bool hasDefinition = normalizedCode.Length > 0 && PreviewDefinitions.TryGetValue(normalizedCode, out definition);
             string label = hasDefinition ? normalizedCode : "EMPTY";
             pieceCodeLabel.text = label;
+            pieceCodeLabel.color = useGhostLook
+                ? new Color(AccentColor.r, AccentColor.g, AccentColor.b, 0.56f)
+                : AccentColor;
 
             backgroundImage.color = hasDefinition
-                ? Color.Lerp(PreviewBackgroundColor, definition.Color, 0.14f)
+                ? Color.Lerp(PreviewBackgroundColor, definition.Color, useGhostLook ? 0.06f : 0.14f)
                 : PreviewBackgroundColor;
 
             bool showTexture = preferSpritePreview && previewTexture != null && hasDefinition;
@@ -1145,6 +1501,7 @@ public class GameplayHudController : MonoBehaviour
             }
 
             pieceTextureImage.texture = previewTexture;
+            pieceTextureImage.color = useGhostLook ? HoldPreviewGhostTint : Color.white;
             pieceTextureImage.enabled = showTexture;
             gridRoot.gameObject.SetActive(!showTexture);
 
@@ -1163,7 +1520,9 @@ public class GameplayHudController : MonoBehaviour
                 int index = occupiedCell.y * 4 + occupiedCell.x;
                 if (index >= 0 && index < cells.Length)
                 {
-                    cells[index].color = definition.Color;
+                    cells[index].color = useGhostLook
+                        ? new Color(0.92f, 0.97f, 1f, 0.3f)
+                        : definition.Color;
                 }
             }
         }
