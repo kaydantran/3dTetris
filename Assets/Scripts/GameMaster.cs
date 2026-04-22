@@ -145,7 +145,7 @@ public class GameMaster : MonoBehaviour
 
         totalLayersCleared += count;
         layersSinceLastBump += count;
-        score += count * count * 100;
+        score += GetLineClearScore(count);
 
         while (layersSinceLastBump >= layersPerSpeedBump)
         {
@@ -201,6 +201,18 @@ public class GameMaster : MonoBehaviour
 
         float elapsed = Mathf.Max(0.001f, Time.time - gameplayStartTime);
         return totalPiecesLocked / elapsed;
+    }
+
+    private static int GetLineClearScore(int clearedLayers)
+    {
+        return clearedLayers switch
+        {
+            1 => 100,
+            2 => 300,
+            3 => 500,
+            4 => 800,
+            _ => 800 + Mathf.Max(0, clearedLayers - 4) * 300
+        };
     }
 
     public void PlayPlaceBlockSound()

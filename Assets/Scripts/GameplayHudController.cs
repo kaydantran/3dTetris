@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 /// <summary>
 /// Builds a cursor-friendly runtime HUD for queue/hold previews, run stats, and timing controls.
@@ -29,10 +32,18 @@ public class GameplayHudController : MonoBehaviour
 
     [SerializeField] private ActivePieceController pieceController;
     [SerializeField] private GameMaster gameMaster;
+    [SerializeField] private Texture2D pieceITexture;
+    [SerializeField] private Texture2D pieceJTexture;
+    [SerializeField] private Texture2D pieceLTexture;
+    [SerializeField] private Texture2D pieceOTexture;
+    [SerializeField] private Texture2D pieceSTexture;
+    [SerializeField] private Texture2D pieceTTexture;
+    [SerializeField] private Texture2D pieceZTexture;
 
     private Canvas canvas;
     private RectTransform hudRoot;
     private Font uiFont;
+    private Text scoreValueText;
     private Text linesValueText;
     private Text piecesPerSecondValueText;
     private InputField dasInputField;
@@ -46,6 +57,7 @@ public class GameplayHudController : MonoBehaviour
     private void Awake()
     {
         ResolveReferences();
+        ResolvePreviewSprites();
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
 
@@ -57,11 +69,19 @@ public class GameplayHudController : MonoBehaviour
     private void OnEnable()
     {
         ResolveReferences();
+        ResolvePreviewSprites();
         EnsureEventSystem();
         EnsureUi();
         BindEvents();
         RefreshAll();
     }
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        ResolvePreviewSprites();
+    }
+#endif
 
     private void Start()
     {
@@ -232,6 +252,7 @@ public class GameplayHudController : MonoBehaviour
         layout.childForceExpandHeight = false;
 
         CreateSectionTitle(panel, "RUN DATA");
+        CreateStatRow(panel, "Score", out scoreValueText);
         CreateStatRow(panel, "Lines Cleared", out linesValueText);
         CreateStatRow(panel, "Pieces / Sec", out piecesPerSecondValueText);
         CreateDivider(panel);
@@ -262,7 +283,7 @@ public class GameplayHudController : MonoBehaviour
         nextPreviewWidgets.Clear();
         for (int i = 0; i < 5; i++)
         {
-            nextPreviewWidgets.Add(new PiecePreviewWidget(panel, uiFont, 20f, 82f));
+            nextPreviewWidgets.Add(new PiecePreviewWidget(panel, uiFont, 20f, 82f, true));
         }
     }
 
@@ -286,13 +307,18 @@ public class GameplayHudController : MonoBehaviour
         for (int i = 0; i < nextPreviewWidgets.Count; i++)
         {
             string pieceCode = i < upcomingCodes.Length ? upcomingCodes[i] : string.Empty;
-            nextPreviewWidgets[i].SetPiece(pieceCode);
+            nextPreviewWidgets[i].SetPiece(pieceCode, GetPreviewTexture(pieceCode));
         }
     }
 
     private void RefreshStats()
     {
         if (gameMaster == null) return;
+
+        if (scoreValueText != null)
+        {
+            scoreValueText.text = gameMaster.Score.ToString();
+        }
 
         if (linesValueText != null)
         {
@@ -323,6 +349,59 @@ public class GameplayHudController : MonoBehaviour
             arrInputField.SetTextWithoutNotify(Mathf.RoundToInt(pieceController.AutoRepeatRateMilliseconds).ToString());
         }
     }
+
+    private Texture GetPreviewTexture(string pieceCode)
+    {
+        if (string.IsNullOrWhiteSpace(pieceCode))
+        {
+            return null;
+        }
+
+        switch (pieceCode.Trim().ToUpperInvariant())
+        {
+            case "I":
+                return pieceITexture;
+            case "J":
+                return pieceJTexture;
+            case "L":
+                return pieceLTexture;
+            case "O":
+                return pieceOTexture;
+            case "S":
+                return pieceSTexture;
+            case "T":
+                return pieceTTexture;
+            case "Z":
+                return pieceZTexture;
+            default:
+                return null;
+        }
+    }
+
+    private void ResolvePreviewSprites()
+    {
+#if UNITY_EDITOR
+        pieceITexture = ResolvePreviewTexture(pieceITexture, "Assets/GUI/PieceI.png");
+        pieceJTexture = ResolvePreviewTexture(pieceJTexture, "Assets/GUI/PieceJ.png");
+        pieceLTexture = ResolvePreviewTexture(pieceLTexture, "Assets/GUI/PieceL.png");
+        pieceOTexture = ResolvePreviewTexture(pieceOTexture, "Assets/GUI/PieceO.png");
+        pieceSTexture = ResolvePreviewTexture(pieceSTexture, "Assets/GUI/PieceS.png");
+        pieceTTexture = ResolvePreviewTexture(pieceTTexture, "Assets/GUI/PieceT.png");
+        pieceZTexture = ResolvePreviewTexture(pieceZTexture, "Assets/GUI/PieceZ.png");
+#endif
+    }
+
+#if UNITY_EDITOR
+    private static Texture2D ResolvePreviewTexture(Texture2D existingTexture, string assetPath)
+    {
+        if (existingTexture != null)
+        {
+            return existingTexture;
+        }
+
+        return AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+    }
+#endif
 
     private void HandleDasEdited(string value)
     {
@@ -547,11 +626,17 @@ public class GameplayHudController : MonoBehaviour
     private sealed class PiecePreviewWidget
     {
         private readonly Image backgroundImage;
+        private readonly RectTransform gridRoot;
+        private readonly AspectRatioFitter textureAspectRatioFitter;
+        private readonly RawImage pieceTextureImage;
         private readonly Image[] cells;
         private readonly Text pieceCodeLabel;
+        private readonly bool preferSpritePreview;
 
-        public PiecePreviewWidget(Transform parent, Font font, float cellSize, float preferredHeight)
+        public PiecePreviewWidget(Transform parent, Font font, float cellSize, float preferredHeight, bool preferSpritePreview = false)
         {
+            this.preferSpritePreview = preferSpritePreview;
+
             RectTransform root = CreateUiObject("PiecePreviewWidget", parent);
             AddLayoutElement(root.gameObject, 0f, preferredHeight);
 
@@ -578,7 +663,22 @@ public class GameplayHudController : MonoBehaviour
             pieceCodeLabel.raycastTarget = false;
             pieceCodeLabel.supportRichText = false;
 
-            RectTransform gridRoot = CreateUiObject("Grid", root);
+            RectTransform spriteRoot = CreateUiObject("Sprite", root);
+            spriteRoot.anchorMin = new Vector2(0.5f, 0.5f);
+            spriteRoot.anchorMax = new Vector2(0.5f, 0.5f);
+            spriteRoot.pivot = new Vector2(0.5f, 0.5f);
+            spriteRoot.sizeDelta = new Vector2(156f, preferredHeight - 34f);
+            spriteRoot.anchoredPosition = new Vector2(0f, -5f);
+
+            textureAspectRatioFitter = spriteRoot.gameObject.AddComponent<AspectRatioFitter>();
+            textureAspectRatioFitter.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
+            textureAspectRatioFitter.aspectRatio = 1f;
+
+            pieceTextureImage = spriteRoot.gameObject.AddComponent<RawImage>();
+            pieceTextureImage.raycastTarget = false;
+            pieceTextureImage.enabled = false;
+
+            gridRoot = CreateUiObject("Grid", root);
             gridRoot.anchorMin = new Vector2(0.5f, 0.5f);
             gridRoot.anchorMax = new Vector2(0.5f, 0.5f);
             gridRoot.pivot = new Vector2(0.5f, 0.5f);
@@ -607,7 +707,7 @@ public class GameplayHudController : MonoBehaviour
             SetPiece(string.Empty);
         }
 
-        public void SetPiece(string pieceCode)
+        public void SetPiece(string pieceCode, Texture previewTexture = null)
         {
             string normalizedCode = string.IsNullOrWhiteSpace(pieceCode) ? string.Empty : pieceCode.Trim().ToUpperInvariant();
             PreviewDefinition definition = default;
@@ -619,12 +719,22 @@ public class GameplayHudController : MonoBehaviour
                 ? Color.Lerp(PreviewBackgroundColor, definition.Color, 0.14f)
                 : PreviewBackgroundColor;
 
+            bool showTexture = preferSpritePreview && previewTexture != null && hasDefinition;
+            if (showTexture)
+            {
+                textureAspectRatioFitter.aspectRatio = Mathf.Max(0.01f, (float)previewTexture.width / previewTexture.height);
+            }
+
+            pieceTextureImage.texture = previewTexture;
+            pieceTextureImage.enabled = showTexture;
+            gridRoot.gameObject.SetActive(!showTexture);
+
             for (int i = 0; i < cells.Length; i++)
             {
                 cells[i].color = PreviewCellOffColor;
             }
 
-            if (!hasDefinition)
+            if (!hasDefinition || showTexture)
             {
                 return;
             }

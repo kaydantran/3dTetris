@@ -496,7 +496,7 @@ public class TetrisGrid : MonoBehaviour
         CreateLine("BottomFront", min, new Vector3(max.x, min.y, min.z), boundaryColor, boundaryLineWidth);
         CreateLine("BottomBack", new Vector3(min.x, min.y, max.z), new Vector3(max.x, min.y, max.z), boundaryColor, boundaryLineWidth);
         CreateLine("BottomLeft", min, new Vector3(min.x, min.y, max.z), boundaryColor, boundaryLineWidth);
-        CreateLine("BottomRight", new Vector3(max.x, min.y, min.z), max, boundaryColor, boundaryLineWidth);
+        CreateLine("BottomRight", new Vector3(max.x, min.y, min.z), new Vector3(max.x, min.y, max.z), boundaryColor, boundaryLineWidth);
 
         CreateLine("TopFront", new Vector3(min.x, max.y, min.z), new Vector3(max.x, max.y, min.z), boundaryColor, boundaryLineWidth);
         CreateLine("TopBack", new Vector3(min.x, max.y, max.z), max, boundaryColor, boundaryLineWidth);
