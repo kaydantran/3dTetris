@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+using TMPro;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -39,11 +40,17 @@ public class GameplayHudController : MonoBehaviour
     [SerializeField] private Texture2D pieceSTexture;
     [SerializeField] private Texture2D pieceTTexture;
     [SerializeField] private Texture2D pieceZTexture;
+    [SerializeField] private Canvas targetHudCanvas;
+    [SerializeField] private TMP_Text scoreNumberTmpText;
+    [SerializeField] private TMP_Text timeNumberTmpText;
+    [SerializeField] private Text scoreNumberText;
+    [SerializeField] private Text timeNumberText;
 
     private Canvas canvas;
     private RectTransform hudRoot;
     private Font uiFont;
     private Text scoreValueText;
+    private Text timeValueText;
     private Text linesValueText;
     private Text piecesPerSecondValueText;
     private InputField dasInputField;
@@ -57,6 +64,7 @@ public class GameplayHudController : MonoBehaviour
     private void Awake()
     {
         ResolveReferences();
+        ResolveHudBindings();
         ResolvePreviewSprites();
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
@@ -69,6 +77,7 @@ public class GameplayHudController : MonoBehaviour
     private void OnEnable()
     {
         ResolveReferences();
+        ResolveHudBindings();
         ResolvePreviewSprites();
         EnsureEventSystem();
         EnsureUi();
@@ -79,6 +88,7 @@ public class GameplayHudController : MonoBehaviour
 #if UNITY_EDITOR
     private void OnValidate()
     {
+        ResolveHudBindings();
         ResolvePreviewSprites();
     }
 #endif
@@ -96,6 +106,7 @@ public class GameplayHudController : MonoBehaviour
             BindEvents();
         }
 
+        RefreshTimeDisplay();
         RefreshPiecesPerSecond();
     }
 
@@ -106,6 +117,7 @@ public class GameplayHudController : MonoBehaviour
 
     private void EnsureUi()
     {
+        ResolveHudBindings();
         BuildUi();
 
         if (canvas != null)
@@ -115,7 +127,7 @@ public class GameplayHudController : MonoBehaviour
             canvas.sortingOrder = 200;
         }
 
-        RectTransform canvasRect = transform as RectTransform;
+        RectTransform canvasRect = canvas != null ? canvas.transform as RectTransform : null;
         if (canvasRect != null)
         {
             canvasRect.anchorMin = Vector2.zero;
@@ -142,6 +154,57 @@ public class GameplayHudController : MonoBehaviour
         if (gameMaster == null)
         {
             gameMaster = FindAnyObjectByType<GameMaster>();
+        }
+    }
+
+    private void ResolveHudBindings()
+    {
+        if (targetHudCanvas == null)
+        {
+            targetHudCanvas = GetComponent<Canvas>();
+        }
+
+        if (targetHudCanvas == null)
+        {
+            targetHudCanvas = FindCanvasByName("HUD");
+        }
+
+        if (targetHudCanvas == null)
+        {
+            targetHudCanvas = FindAnyObjectByType<Canvas>();
+        }
+
+        canvas = targetHudCanvas;
+
+        if (canvas == null)
+        {
+            return;
+        }
+
+        if (scoreNumberTmpText == null)
+        {
+            Transform scoreTransform = FindDescendantByName(canvas.transform, "ScoreNumber");
+            if (scoreTransform != null)
+            {
+                scoreNumberTmpText = scoreTransform.GetComponent<TMP_Text>();
+                if (scoreNumberTmpText == null)
+                {
+                    scoreNumberText = scoreTransform.GetComponent<Text>();
+                }
+            }
+        }
+
+        if (timeNumberTmpText == null)
+        {
+            Transform timeTransform = FindDescendantByName(canvas.transform, "TimeNumber");
+            if (timeTransform != null)
+            {
+                timeNumberTmpText = timeTransform.GetComponent<TMP_Text>();
+                if (timeNumberTmpText == null)
+                {
+                    timeNumberText = timeTransform.GetComponent<Text>();
+                }
+            }
         }
     }
 
@@ -188,28 +251,27 @@ public class GameplayHudController : MonoBehaviour
 
         uiFont = LoadBuiltinFont();
 
-        canvas = gameObject.GetComponent<Canvas>();
         if (canvas == null)
         {
-            canvas = gameObject.AddComponent<Canvas>();
+            return;
         }
 
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 200;
 
-        CanvasScaler scaler = gameObject.GetComponent<CanvasScaler>();
+        CanvasScaler scaler = canvas.GetComponent<CanvasScaler>();
         if (scaler == null)
         {
-            scaler = gameObject.AddComponent<CanvasScaler>();
+            scaler = canvas.gameObject.AddComponent<CanvasScaler>();
         }
 
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(1920f, 1080f);
         scaler.matchWidthOrHeight = 0.5f;
 
-        if (gameObject.GetComponent<GraphicRaycaster>() == null)
+        if (canvas.gameObject.GetComponent<GraphicRaycaster>() == null)
         {
-            gameObject.AddComponent<GraphicRaycaster>();
+            canvas.gameObject.AddComponent<GraphicRaycaster>();
         }
 
         if (hudRoot != null)
@@ -217,7 +279,13 @@ public class GameplayHudController : MonoBehaviour
             return;
         }
 
-        hudRoot = CreateUiObject("HudRoot", transform);
+        Transform existingGeneratedRoot = canvas.transform.Find("GameplayHudGenerated");
+        hudRoot = existingGeneratedRoot as RectTransform;
+        if (hudRoot == null)
+        {
+            hudRoot = CreateUiObject("GameplayHudGenerated", canvas.transform);
+        }
+
         Stretch(hudRoot);
 
         RectTransform holdPanel = CreatePanel("HoldPanel", hudRoot, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(24f, -24f), new Vector2(220f, 250f));
@@ -252,7 +320,14 @@ public class GameplayHudController : MonoBehaviour
         layout.childForceExpandHeight = false;
 
         CreateSectionTitle(panel, "RUN DATA");
-        CreateStatRow(panel, "Score", out scoreValueText);
+        if (scoreNumberTmpText == null && scoreNumberText == null)
+        {
+            CreateStatRow(panel, "Score", out scoreValueText);
+        }
+        if (timeNumberTmpText == null && timeNumberText == null)
+        {
+            CreateStatRow(panel, "Time", out timeValueText);
+        }
         CreateStatRow(panel, "Lines Cleared", out linesValueText);
         CreateStatRow(panel, "Pieces / Sec", out piecesPerSecondValueText);
         CreateDivider(panel);
@@ -320,6 +395,18 @@ public class GameplayHudController : MonoBehaviour
             scoreValueText.text = gameMaster.Score.ToString();
         }
 
+        if (scoreNumberTmpText != null)
+        {
+            scoreNumberTmpText.text = gameMaster.Score.ToString();
+        }
+
+        if (scoreNumberText != null)
+        {
+            scoreNumberText.text = gameMaster.Score.ToString();
+        }
+
+        RefreshTimeDisplay();
+
         if (linesValueText != null)
         {
             linesValueText.text = gameMaster.TotalLayersCleared.ToString();
@@ -333,6 +420,28 @@ public class GameplayHudController : MonoBehaviour
         if (piecesPerSecondValueText == null || gameMaster == null) return;
 
         piecesPerSecondValueText.text = gameMaster.PiecesPerSecond.ToString("0.00");
+    }
+
+    private void RefreshTimeDisplay()
+    {
+        if (gameMaster == null) return;
+
+        string formattedTime = FormatElapsedTime(gameMaster.ElapsedGameplayTime);
+
+        if (timeValueText != null)
+        {
+            timeValueText.text = formattedTime;
+        }
+
+        if (timeNumberTmpText != null)
+        {
+            timeNumberTmpText.text = formattedTime;
+        }
+
+        if (timeNumberText != null)
+        {
+            timeNumberText.text = formattedTime;
+        }
     }
 
     private void RefreshTimingFields()
@@ -609,6 +718,60 @@ public class GameplayHudController : MonoBehaviour
                 return Font.CreateDynamicFontFromOSFont(new[] { "Arial", "Helvetica", "Verdana" }, 16);
             }
         }
+    }
+
+    private static string FormatElapsedTime(float elapsedSeconds)
+    {
+        int totalSeconds = Mathf.Max(0, Mathf.FloorToInt(elapsedSeconds));
+        int hours = totalSeconds / 3600;
+        int minutes = (totalSeconds / 60) % 60;
+        int seconds = totalSeconds % 60;
+
+        if (hours > 0)
+        {
+            return $"{hours}:{minutes:00}:{seconds:00}";
+        }
+
+        return $"{minutes}:{seconds:00}";
+    }
+
+    private static Canvas FindCanvasByName(string canvasName)
+    {
+        Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        foreach (Canvas foundCanvas in canvases)
+        {
+            if (string.Equals(foundCanvas.name, canvasName, StringComparison.OrdinalIgnoreCase))
+            {
+                return foundCanvas;
+            }
+        }
+
+        return null;
+    }
+
+    private static Transform FindDescendantByName(Transform root, string targetName)
+    {
+        if (root == null || string.IsNullOrEmpty(targetName))
+        {
+            return null;
+        }
+
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform child = root.GetChild(i);
+            if (string.Equals(child.name, targetName, StringComparison.OrdinalIgnoreCase))
+            {
+                return child;
+            }
+
+            Transform nestedMatch = FindDescendantByName(child, targetName);
+            if (nestedMatch != null)
+            {
+                return nestedMatch;
+            }
+        }
+
+        return null;
     }
 
     private readonly struct PreviewDefinition

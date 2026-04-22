@@ -50,6 +50,7 @@ public class GameMaster : MonoBehaviour
     private int score;
     private bool isGameOver;
     private float gameplayStartTime = -1f;
+    private float finalElapsedGameplayTime;
     private float finalPiecesPerSecond;
     private AudioSource effectsAudioSource;
     private Material trailMaterial;
@@ -62,6 +63,7 @@ public class GameMaster : MonoBehaviour
     public int Score => score;
     public int TotalLayersCleared => totalLayersCleared;
     public int TotalPiecesLocked => totalPiecesLocked;
+    public float ElapsedGameplayTime => isGameOver ? finalElapsedGameplayTime : CalculateElapsedGameplayTime();
     public float PiecesPerSecond => isGameOver ? finalPiecesPerSecond : CalculatePiecesPerSecond();
     public bool IsGameOver => isGameOver;
 
@@ -85,14 +87,22 @@ public class GameMaster : MonoBehaviour
 
         if (FindAnyObjectByType<GameplayHudController>() == null)
         {
-            GameObject hudObject = new GameObject(
-                "GameplayHUD",
-                typeof(RectTransform),
-                typeof(Canvas),
-                typeof(CanvasScaler),
-                typeof(GraphicRaycaster));
+            Canvas existingHudCanvas = FindGameplayHudCanvas();
+            if (existingHudCanvas != null)
+            {
+                existingHudCanvas.gameObject.AddComponent<GameplayHudController>();
+            }
+            else
+            {
+                GameObject hudObject = new GameObject(
+                    "GameplayHUD",
+                    typeof(RectTransform),
+                    typeof(Canvas),
+                    typeof(CanvasScaler),
+                    typeof(GraphicRaycaster));
 
-            hudObject.AddComponent<GameplayHudController>();
+                hudObject.AddComponent<GameplayHudController>();
+            }
         }
     }
 
@@ -116,6 +126,20 @@ public class GameMaster : MonoBehaviour
 #if UNITY_EDITOR
         ResolveAudioClips();
 #endif
+    }
+
+    private static Canvas FindGameplayHudCanvas()
+    {
+        Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        foreach (Canvas existingCanvas in canvases)
+        {
+            if (string.Equals(existingCanvas.name, "HUD", StringComparison.OrdinalIgnoreCase))
+            {
+                return existingCanvas;
+            }
+        }
+
+        return null;
     }
 
     public void OnGameplayStarted()
@@ -163,6 +187,7 @@ public class GameMaster : MonoBehaviour
     {
         if (isGameOver) return;
 
+        finalElapsedGameplayTime = CalculateElapsedGameplayTime();
         finalPiecesPerSecond = CalculatePiecesPerSecond();
         isGameOver = true;
         NotifyStatsChanged();
@@ -195,11 +220,18 @@ public class GameMaster : MonoBehaviour
         gameOverRoutine = StartCoroutine(PlayGameOverExplosionRoutine(explosionOrigin, orbitCamera, fragments));
     }
 
+    private float CalculateElapsedGameplayTime()
+    {
+        if (gameplayStartTime < 0f) return 0f;
+
+        return Mathf.Max(0f, Time.time - gameplayStartTime);
+    }
+
     private float CalculatePiecesPerSecond()
     {
         if (gameplayStartTime < 0f) return 0f;
 
-        float elapsed = Mathf.Max(0.001f, Time.time - gameplayStartTime);
+        float elapsed = Mathf.Max(0.001f, CalculateElapsedGameplayTime());
         return totalPiecesLocked / elapsed;
     }
 
