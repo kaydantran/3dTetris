@@ -56,19 +56,24 @@ public class GameplayHudController : MonoBehaviour
     [SerializeField] private RenderTexture pieceTRenderTexture;
     [SerializeField] private RenderTexture pieceZRenderTexture;
     [SerializeField] private Canvas targetHudCanvas;
+    [SerializeField] private Canvas pausedCanvas;
     [SerializeField] private TMP_Text scoreNumberTmpText;
     [SerializeField] private TMP_Text timeNumberTmpText;
     [SerializeField] private TMP_Text nextTextTmpText;
     [SerializeField] private TMP_Text holdTextTmpText;
+    [SerializeField] private TMP_Text pauseTextTmpText;
+    [SerializeField] private TMP_Text pauseInfoTmpText;
     [SerializeField] private Text scoreNumberText;
     [SerializeField] private Text timeNumberText;
 
     private Canvas canvas;
+    private RectTransform pausedCanvasRoot;
     private RectTransform hudRoot;
     private RectTransform holdRoot;
     private RectTransform nextPiecesRoot;
     private RectTransform controlsShownRoot;
     private RectTransform controlsHiddenRoot;
+    private RectTransform pausePanelRoot;
     private RectTransform sceneHoldPreviewPanel;
     private RectTransform sceneNextPreviewPanel;
     private Font uiFont;
@@ -78,6 +83,8 @@ public class GameplayHudController : MonoBehaviour
     private Text piecesPerSecondValueText;
     private InputField dasInputField;
     private InputField arrInputField;
+    private TMP_InputField pauseDasInputField;
+    private TMP_InputField pauseArrInputField;
     private PiecePreviewWidget holdPreviewWidget;
     private RawImage sceneHoldPreviewSlot;
     private readonly List<PiecePreviewWidget> nextPreviewWidgets = new List<PiecePreviewWidget>();
@@ -85,11 +92,6 @@ public class GameplayHudController : MonoBehaviour
     private Material holdPreviewGhostMaterial;
     private bool areControlsExpanded;
     private bool isBound;
-    private RectTransform pauseOverlayRoot;
-    private Text pauseScoreValueText;
-    private Text pauseTimeValueText;
-    private Text pauseLinesValueText;
-    private Text pausePiecesPerSecondValueText;
     private const string PreferredBuiltinFontPath = "LegacyRuntime.ttf";
     private const string FallbackBuiltinFontPath = "Arial.ttf";
 
@@ -164,9 +166,10 @@ public class GameplayHudController : MonoBehaviour
     {
         ResolveHudBindings();
         BuildUi();
+        RemoveGameplayStatsPanel();
         EnsureSceneHoldPreviewPanel();
         EnsureSceneNextPreviewPanel();
-        EnsurePauseOverlay();
+        EnsurePauseCanvasStyling();
 
         if (canvas != null)
         {
@@ -185,6 +188,21 @@ public class GameplayHudController : MonoBehaviour
             canvasRect.localScale = Vector3.one;
         }
 
+        if (pausedCanvas != null)
+        {
+            pausedCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            pausedCanvas.sortingOrder = 400;
+        }
+
+        if (pausedCanvasRoot != null)
+        {
+            pausedCanvasRoot.anchorMin = Vector2.zero;
+            pausedCanvasRoot.anchorMax = Vector2.one;
+            pausedCanvasRoot.offsetMin = Vector2.zero;
+            pausedCanvasRoot.offsetMax = Vector2.zero;
+            pausedCanvasRoot.localScale = Vector3.one;
+        }
+
         if (hudRoot != null)
         {
             Stretch(hudRoot);
@@ -192,7 +210,21 @@ public class GameplayHudController : MonoBehaviour
         }
 
         ApplyControlsVisibility();
-        ApplyPauseOverlayState();
+        ApplyPauseCanvasState();
+    }
+
+    private void RemoveGameplayStatsPanel()
+    {
+        if (hudRoot == null)
+        {
+            return;
+        }
+
+        Transform statsPanelTransform = hudRoot.Find("StatsPanel");
+        if (statsPanelTransform != null)
+        {
+            statsPanelTransform.gameObject.SetActive(false);
+        }
     }
 
     private void ResolveReferences()
@@ -220,6 +252,11 @@ public class GameplayHudController : MonoBehaviour
             targetHudCanvas = FindCanvasByName("HUD");
         }
 
+        if (pausedCanvas == null)
+        {
+            pausedCanvas = FindCanvasByName("Paused");
+        }
+
         if (targetHudCanvas == null)
         {
             targetHudCanvas = FindAnyObjectByType<Canvas>();
@@ -231,6 +268,8 @@ public class GameplayHudController : MonoBehaviour
         {
             return;
         }
+
+        pausedCanvasRoot = pausedCanvas != null ? pausedCanvas.transform as RectTransform : null;
 
         if (scoreNumberTmpText == null)
         {
@@ -299,6 +338,50 @@ public class GameplayHudController : MonoBehaviour
                 holdTextTmpText = holdTextTransform.GetComponent<TMP_Text>();
             }
         }
+
+        if (pausedCanvas != null)
+        {
+            if (pausePanelRoot == null)
+            {
+                pausePanelRoot = FindDescendantByName(pausedCanvas.transform, "PausePanel") as RectTransform;
+            }
+
+            if (pauseInfoTmpText == null)
+            {
+                Transform pauseInfoTransform = FindDescendantByName(pausedCanvas.transform, "PauseInfo");
+                if (pauseInfoTransform != null)
+                {
+                    pauseInfoTmpText = pauseInfoTransform.GetComponent<TMP_Text>();
+                }
+            }
+
+            if (pauseTextTmpText == null)
+            {
+                Transform pauseTextTransform = FindDescendantByName(pausedCanvas.transform, "PauseText");
+                if (pauseTextTransform != null)
+                {
+                    pauseTextTmpText = pauseTextTransform.GetComponent<TMP_Text>();
+                }
+            }
+
+            if (pauseDasInputField == null)
+            {
+                Transform dasTransform = FindDescendantByName(pausedCanvas.transform, "DAS");
+                if (dasTransform != null)
+                {
+                    pauseDasInputField = dasTransform.GetComponent<TMP_InputField>();
+                }
+            }
+
+            if (pauseArrInputField == null)
+            {
+                Transform arrTransform = FindDescendantByName(pausedCanvas.transform, "ARR");
+                if (arrTransform != null)
+                {
+                    pauseArrInputField = arrTransform.GetComponent<TMP_InputField>();
+                }
+            }
+        }
     }
 
     private void BindEvents()
@@ -308,7 +391,7 @@ public class GameplayHudController : MonoBehaviour
         pieceController.StateChanged += RefreshAll;
         pieceController.TimingSettingsChanged += RefreshTimingFields;
         gameMaster.StatsChanged += RefreshStats;
-        gameMaster.PauseStateChanged += ApplyPauseOverlayState;
+        gameMaster.PauseStateChanged += ApplyPauseCanvasState;
         isBound = true;
     }
 
@@ -325,7 +408,7 @@ public class GameplayHudController : MonoBehaviour
         if (gameMaster != null)
         {
             gameMaster.StatsChanged -= RefreshStats;
-            gameMaster.PauseStateChanged -= ApplyPauseOverlayState;
+            gameMaster.PauseStateChanged -= ApplyPauseCanvasState;
         }
 
         isBound = false;
@@ -386,7 +469,6 @@ public class GameplayHudController : MonoBehaviour
         RectTransform holdPanel = holdRoot == null
             ? CreatePanel("HoldPanel", hudRoot, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(24f, -24f), new Vector2(220f, 250f))
             : null;
-        RectTransform statsPanel = CreatePanel("StatsPanel", hudRoot, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -24f), new Vector2(360f, 250f));
         RectTransform nextPanel = nextPiecesRoot == null
             ? CreatePanel("NextPanel", hudRoot, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-24f, -24f), new Vector2(220f, 640f))
             : null;
@@ -395,7 +477,6 @@ public class GameplayHudController : MonoBehaviour
         {
             BuildHoldPanel(holdPanel);
         }
-        BuildStatsPanel(statsPanel);
         if (nextPanel != null)
         {
             BuildNextPanel(nextPanel);
@@ -522,11 +603,6 @@ public class GameplayHudController : MonoBehaviour
             scoreValueText.text = gameMaster.Score.ToString();
         }
 
-        if (pauseScoreValueText != null)
-        {
-            pauseScoreValueText.text = gameMaster.Score.ToString();
-        }
-
         if (scoreNumberTmpText != null)
         {
             scoreNumberTmpText.text = gameMaster.Score.ToString();
@@ -544,12 +620,8 @@ public class GameplayHudController : MonoBehaviour
             linesValueText.text = gameMaster.TotalLayersCleared.ToString();
         }
 
-        if (pauseLinesValueText != null)
-        {
-            pauseLinesValueText.text = gameMaster.TotalLayersCleared.ToString();
-        }
-
         RefreshPiecesPerSecond();
+        RefreshPauseInfoText();
     }
 
     private void RefreshPiecesPerSecond()
@@ -560,11 +632,6 @@ public class GameplayHudController : MonoBehaviour
         if (piecesPerSecondValueText != null)
         {
             piecesPerSecondValueText.text = piecesPerSecondText;
-        }
-
-        if (pausePiecesPerSecondValueText != null)
-        {
-            pausePiecesPerSecondValueText.text = piecesPerSecondText;
         }
     }
 
@@ -577,11 +644,6 @@ public class GameplayHudController : MonoBehaviour
         if (timeValueText != null)
         {
             timeValueText.text = formattedTime;
-        }
-
-        if (pauseTimeValueText != null)
-        {
-            pauseTimeValueText.text = formattedTime;
         }
 
         if (timeNumberTmpText != null)
@@ -607,6 +669,16 @@ public class GameplayHudController : MonoBehaviour
         if (arrInputField != null && !arrInputField.isFocused)
         {
             arrInputField.SetTextWithoutNotify(Mathf.RoundToInt(pieceController.AutoRepeatRateMilliseconds).ToString());
+        }
+
+        if (pauseDasInputField != null && !pauseDasInputField.isFocused)
+        {
+            pauseDasInputField.SetTextWithoutNotify(Mathf.RoundToInt(pieceController.DelayedAutoShiftMilliseconds).ToString());
+        }
+
+        if (pauseArrInputField != null && !pauseArrInputField.isFocused)
+        {
+            pauseArrInputField.SetTextWithoutNotify(Mathf.RoundToInt(pieceController.AutoRepeatRateMilliseconds).ToString());
         }
     }
 
@@ -931,6 +1003,20 @@ public class GameplayHudController : MonoBehaviour
         gameMaster.TogglePause();
     }
 
+    private void RefreshPauseInfoText()
+    {
+        if (pauseInfoTmpText == null || gameMaster == null)
+        {
+            return;
+        }
+
+        pauseInfoTmpText.text =
+            "RUN DATA\n\n" +
+            $"LINES CLEARED: {gameMaster.TotalLayersCleared}\n" +
+            $"PIECES/SECOND: {gameMaster.PiecesPerSecond:0.00}\n\n\n" +
+            "TIMING SETTINGS\n\nDAS (ms)\n\nARR (ms)";
+    }
+
     public void ShowControls()
     {
         areControlsExpanded = true;
@@ -949,92 +1035,74 @@ public class GameplayHudController : MonoBehaviour
         ApplyControlsVisibility();
     }
 
-    private void EnsurePauseOverlay()
+    private void EnsurePauseCanvasStyling()
     {
-        if (hudRoot == null)
+        if (pausedCanvas == null)
         {
             return;
         }
 
-        if (pauseOverlayRoot != null)
+        Image pauseCanvasImage = pausedCanvas.GetComponent<Image>();
+        if (pauseCanvasImage == null)
         {
-            return;
+            pauseCanvasImage = pausedCanvas.gameObject.AddComponent<Image>();
         }
 
-        pauseOverlayRoot = CreateUiObject("PauseOverlay", hudRoot);
-        Stretch(pauseOverlayRoot);
-        pauseOverlayRoot.SetAsLastSibling();
+        pauseCanvasImage.color = new Color(0f, 0f, 0f, 0.45f);
+        pauseCanvasImage.raycastTarget = true;
 
-        Image overlayImage = pauseOverlayRoot.gameObject.AddComponent<Image>();
-        overlayImage.color = new Color(0f, 0.02f, 0.05f, 0.72f);
-        overlayImage.raycastTarget = true;
+        if (pausePanelRoot != null)
+        {
+            Image panelBackground = pausePanelRoot.GetComponent<Image>();
+            if (panelBackground == null)
+            {
+                panelBackground = pausePanelRoot.gameObject.AddComponent<Image>();
+            }
 
-        RectTransform pauseWindow = CreatePanel(
-            "PauseWindow",
-            pauseOverlayRoot,
-            new Vector2(0.5f, 0.5f),
-            new Vector2(0.5f, 0.5f),
-            Vector2.zero,
-            new Vector2(460f, 360f));
+            panelBackground.color = new Color(0f, 0f, 0f, 0.92f);
+            panelBackground.raycastTarget = false;
 
-        VerticalLayoutGroup layout = pauseWindow.gameObject.AddComponent<VerticalLayoutGroup>();
-        layout.padding = new RectOffset(20, 20, 20, 20);
-        layout.spacing = 12f;
-        layout.childAlignment = TextAnchor.UpperCenter;
-        layout.childForceExpandWidth = true;
-        layout.childForceExpandHeight = false;
-        layout.childControlWidth = true;
-        layout.childControlHeight = false;
+            CreateOrUpdateBorderSegment(pausePanelRoot, "BorderTop", new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, 0f), new Vector2(0f, NextPanelBorderThickness), NextPanelOutlineColor);
+            CreateOrUpdateBorderSegment(pausePanelRoot, "BorderBottom", new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 0f), new Vector2(0f, NextPanelBorderThickness), NextPanelOutlineColor);
+            CreateOrUpdateBorderSegment(pausePanelRoot, "BorderLeft", new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(0f, 0f), new Vector2(NextPanelBorderThickness, 0f), NextPanelOutlineColor);
+            CreateOrUpdateBorderSegment(pausePanelRoot, "BorderRight", new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(1f, 0.5f), new Vector2(0f, 0f), new Vector2(NextPanelBorderThickness, 0f), NextPanelOutlineColor);
+            CreateOrUpdateBorderSegment(pausePanelRoot, "BevelTop", new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -NextPanelBorderThickness), new Vector2(0f, 1f), NextPanelBevelColor);
+            CreateOrUpdateBorderSegment(pausePanelRoot, "BevelLeft", new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(0f, 0.5f), new Vector2(NextPanelBorderThickness, 0f), new Vector2(1f, 0f), NextPanelBevelColor);
+        }
 
-        Text pauseTitle = CreateText(pauseWindow, "PauseTitle", "PAUSED", 26, FontStyle.Bold, TextColor, TextAnchor.MiddleCenter);
-        AddLayoutElement(pauseTitle.gameObject, 0f, 34f);
+        if (pauseTextTmpText != null)
+        {
+            pauseTextTmpText.text = "GAME PAUSED";
+        }
 
-        Text pauseHint = CreateText(pauseWindow, "PauseHint", "Press Esc to resume", 14, FontStyle.Italic, AccentColor, TextAnchor.MiddleCenter);
-        AddLayoutElement(pauseHint.gameObject, 0f, 22f);
+        if (pauseDasInputField != null)
+        {
+            pauseDasInputField.contentType = TMP_InputField.ContentType.IntegerNumber;
+            pauseDasInputField.lineType = TMP_InputField.LineType.SingleLine;
+            pauseDasInputField.onEndEdit.RemoveListener(HandleDasEdited);
+            pauseDasInputField.onEndEdit.AddListener(HandleDasEdited);
+        }
 
-        RectTransform runDataPanel = CreateUiObject("PauseRunDataPanel", pauseWindow);
-        AddLayoutElement(runDataPanel.gameObject, 0f, 220f);
-
-        Image runDataPanelBackground = runDataPanel.gameObject.AddComponent<Image>();
-        runDataPanelBackground.color = PanelColor;
-
-        Outline runDataPanelOutline = runDataPanel.gameObject.AddComponent<Outline>();
-        runDataPanelOutline.effectColor = new Color(AccentColor.r, AccentColor.g, AccentColor.b, 0.18f);
-        runDataPanelOutline.effectDistance = new Vector2(1f, -1f);
-
-        BuildPauseRunDataPanel(runDataPanel);
+        if (pauseArrInputField != null)
+        {
+            pauseArrInputField.contentType = TMP_InputField.ContentType.IntegerNumber;
+            pauseArrInputField.lineType = TMP_InputField.LineType.SingleLine;
+            pauseArrInputField.onEndEdit.RemoveListener(HandleArrEdited);
+            pauseArrInputField.onEndEdit.AddListener(HandleArrEdited);
+        }
     }
 
-    private void BuildPauseRunDataPanel(RectTransform panel)
+    private void ApplyPauseCanvasState()
     {
-        VerticalLayoutGroup layout = panel.gameObject.AddComponent<VerticalLayoutGroup>();
-        layout.padding = new RectOffset(18, 18, 16, 18);
-        layout.spacing = 10f;
-        layout.childAlignment = TextAnchor.UpperLeft;
-        layout.childForceExpandWidth = true;
-        layout.childForceExpandHeight = false;
-
-        CreateSectionTitle(panel, "RUN DATA");
-        CreateStatRow(panel, "Score", out pauseScoreValueText);
-        CreateStatRow(panel, "Time", out pauseTimeValueText);
-        CreateStatRow(panel, "Lines Cleared", out pauseLinesValueText);
-        CreateStatRow(panel, "Pieces / Sec", out pausePiecesPerSecondValueText);
-    }
-
-    private void ApplyPauseOverlayState()
-    {
-        if (pauseOverlayRoot == null)
+        if (pausedCanvas == null)
         {
             return;
         }
 
         bool isPaused = gameMaster != null && gameMaster.IsPaused;
-        pauseOverlayRoot.gameObject.SetActive(isPaused);
-
-        if (isPaused)
-        {
-            pauseOverlayRoot.SetAsLastSibling();
-        }
+        pausedCanvas.enabled = isPaused;
+        RefreshPauseInfoText();
+        RefreshTimingFields();
     }
 
     private void HandleControlsToggleInput()
