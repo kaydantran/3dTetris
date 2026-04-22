@@ -19,6 +19,13 @@ public class GameMaster : MonoBehaviour
     [Tooltip("How many layers must be cleared before the drop speed increases.")]
     [SerializeField] private int layersPerSpeedBump = 3;
 
+    [Header("Scoring")]
+    [SerializeField] private int baseScoreMultiplier = 12;
+    [SerializeField] private float quickClearBonusWindow = 4.5f;
+    [SerializeField] private int maxQuickClearBonus = 425;
+    [SerializeField] private int quickClearBonusPerExtraLayer = 120;
+    [SerializeField] private int quickClearMicroBonusRange = 89;
+
     [Header("Audio")]
     [SerializeField] private AudioClip placeBlockSound;
     [SerializeField] private AudioClip clearSound;
@@ -50,6 +57,7 @@ public class GameMaster : MonoBehaviour
     private int score;
     private bool isGameOver;
     private float gameplayStartTime = -1f;
+    private float lastLayerClearTime = -1f;
     private float finalElapsedGameplayTime;
     private float finalPiecesPerSecond;
     private AudioSource effectsAudioSource;
@@ -169,7 +177,8 @@ public class GameMaster : MonoBehaviour
 
         totalLayersCleared += count;
         layersSinceLastBump += count;
-        score += GetLineClearScore(count);
+        score += GetLineClearScore(count, CalculateQuickClearBonus(count));
+        lastLayerClearTime = Time.time;
 
         while (layersSinceLastBump >= layersPerSpeedBump)
         {
@@ -227,6 +236,27 @@ public class GameMaster : MonoBehaviour
         return Mathf.Max(0f, Time.time - gameplayStartTime);
     }
 
+    private int CalculateQuickClearBonus(int clearedLayers)
+    {
+        if (lastLayerClearTime < 0f)
+        {
+            return 0;
+        }
+
+        float bonusWindow = Mathf.Max(0.1f, quickClearBonusWindow);
+        float timeSinceLastClear = Mathf.Max(0f, Time.time - lastLayerClearTime);
+        float urgency = 1f - Mathf.Clamp01(timeSinceLastClear / bonusWindow);
+        if (urgency <= 0f)
+        {
+            return 0;
+        }
+
+        float layeredBonusScale = 1f + Mathf.Max(0, clearedLayers - 1) * 0.35f;
+        int speedBonus = Mathf.RoundToInt(urgency * urgency * (maxQuickClearBonus + Mathf.Max(0, clearedLayers - 1) * quickClearBonusPerExtraLayer) * layeredBonusScale);
+        int microBonus = Mathf.Clamp(Mathf.RoundToInt(Mathf.Repeat(timeSinceLastClear * 1000f, Mathf.Max(1, quickClearMicroBonusRange))), 0, Mathf.Max(0, quickClearMicroBonusRange - 1));
+        return speedBonus + microBonus;
+    }
+
     private float CalculatePiecesPerSecond()
     {
         if (gameplayStartTime < 0f) return 0f;
@@ -235,9 +265,9 @@ public class GameMaster : MonoBehaviour
         return totalPiecesLocked / elapsed;
     }
 
-    private static int GetLineClearScore(int clearedLayers)
+    private int GetLineClearScore(int clearedLayers, int quickClearBonus)
     {
-        return clearedLayers switch
+        int baseScore = clearedLayers switch
         {
             1 => 100,
             2 => 300,
@@ -245,6 +275,8 @@ public class GameMaster : MonoBehaviour
             4 => 800,
             _ => 800 + Mathf.Max(0, clearedLayers - 4) * 300
         };
+
+        return Mathf.Max(0, baseScore * Mathf.Max(1, baseScoreMultiplier) + quickClearBonus);
     }
 
     public void PlayPlaceBlockSound()

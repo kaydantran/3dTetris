@@ -19,6 +19,11 @@ public class GameplayHudController : MonoBehaviour
     private static readonly Color PreviewCellOffColor = new Color(1f, 1f, 1f, 0.08f);
     private static readonly Color TextColor = new Color(0.93f, 0.97f, 1f, 1f);
     private static readonly Color AccentColor = new Color(0.43f, 0.82f, 1f, 1f);
+    private static readonly Color NextPanelBackgroundColor = new Color(1f, 1f, 1f, 0f);
+    private static readonly Color NextPanelInnerColor = new Color(1f, 1f, 1f, 0f);
+    private static readonly Color NextPanelOutlineColor = new Color(0.95f, 0.98f, 1f, 0.95f);
+    private static readonly Color NextPanelBevelColor = new Color(1f, 1f, 1f, 0f);
+    private static readonly Color NextPanelInnerOutlineColor = new Color(1f, 1f, 1f, 0f);
     private static readonly Vector2Int[] EmptyCells = Array.Empty<Vector2Int>();
     private static readonly Dictionary<string, PreviewDefinition> PreviewDefinitions = new Dictionary<string, PreviewDefinition>(StringComparer.OrdinalIgnoreCase)
     {
@@ -40,14 +45,24 @@ public class GameplayHudController : MonoBehaviour
     [SerializeField] private Texture2D pieceSTexture;
     [SerializeField] private Texture2D pieceTTexture;
     [SerializeField] private Texture2D pieceZTexture;
+    [SerializeField] private RenderTexture pieceIRenderTexture;
+    [SerializeField] private RenderTexture pieceJRenderTexture;
+    [SerializeField] private RenderTexture pieceLRenderTexture;
+    [SerializeField] private RenderTexture pieceORenderTexture;
+    [SerializeField] private RenderTexture pieceSRenderTexture;
+    [SerializeField] private RenderTexture pieceTRenderTexture;
+    [SerializeField] private RenderTexture pieceZRenderTexture;
     [SerializeField] private Canvas targetHudCanvas;
     [SerializeField] private TMP_Text scoreNumberTmpText;
     [SerializeField] private TMP_Text timeNumberTmpText;
+    [SerializeField] private TMP_Text nextTextTmpText;
     [SerializeField] private Text scoreNumberText;
     [SerializeField] private Text timeNumberText;
 
     private Canvas canvas;
     private RectTransform hudRoot;
+    private RectTransform nextPiecesRoot;
+    private RectTransform sceneNextPreviewPanel;
     private Font uiFont;
     private Text scoreValueText;
     private Text timeValueText;
@@ -57,6 +72,7 @@ public class GameplayHudController : MonoBehaviour
     private InputField arrInputField;
     private PiecePreviewWidget holdPreviewWidget;
     private readonly List<PiecePreviewWidget> nextPreviewWidgets = new List<PiecePreviewWidget>();
+    private readonly List<RawImage> sceneNextPreviewSlots = new List<RawImage>();
     private bool isBound;
     private const string PreferredBuiltinFontPath = "LegacyRuntime.ttf";
     private const string FallbackBuiltinFontPath = "Arial.ttf";
@@ -65,6 +81,7 @@ public class GameplayHudController : MonoBehaviour
     {
         ResolveReferences();
         ResolveHudBindings();
+        ResolvePreviewRenderTextures();
         ResolvePreviewSprites();
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
@@ -78,6 +95,7 @@ public class GameplayHudController : MonoBehaviour
     {
         ResolveReferences();
         ResolveHudBindings();
+        ResolvePreviewRenderTextures();
         ResolvePreviewSprites();
         EnsureEventSystem();
         EnsureUi();
@@ -89,6 +107,7 @@ public class GameplayHudController : MonoBehaviour
     private void OnValidate()
     {
         ResolveHudBindings();
+        ResolvePreviewRenderTextures();
         ResolvePreviewSprites();
     }
 #endif
@@ -119,6 +138,7 @@ public class GameplayHudController : MonoBehaviour
     {
         ResolveHudBindings();
         BuildUi();
+        EnsureSceneNextPreviewPanel();
 
         if (canvas != null)
         {
@@ -206,6 +226,21 @@ public class GameplayHudController : MonoBehaviour
                 }
             }
         }
+
+        if (nextPiecesRoot == null)
+        {
+            Transform nextPiecesTransform = FindDescendantByName(canvas.transform, "NextPieces");
+            nextPiecesRoot = nextPiecesTransform as RectTransform;
+        }
+
+        if (nextTextTmpText == null)
+        {
+            Transform nextTextTransform = FindDescendantByName(canvas.transform, "NextText");
+            if (nextTextTransform != null)
+            {
+                nextTextTmpText = nextTextTransform.GetComponent<TMP_Text>();
+            }
+        }
     }
 
     private void BindEvents()
@@ -290,11 +325,16 @@ public class GameplayHudController : MonoBehaviour
 
         RectTransform holdPanel = CreatePanel("HoldPanel", hudRoot, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(24f, -24f), new Vector2(220f, 250f));
         RectTransform statsPanel = CreatePanel("StatsPanel", hudRoot, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -24f), new Vector2(360f, 250f));
-        RectTransform nextPanel = CreatePanel("NextPanel", hudRoot, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-24f, -24f), new Vector2(220f, 640f));
+        RectTransform nextPanel = nextPiecesRoot == null
+            ? CreatePanel("NextPanel", hudRoot, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-24f, -24f), new Vector2(220f, 640f))
+            : null;
 
         BuildHoldPanel(holdPanel);
         BuildStatsPanel(statsPanel);
-        BuildNextPanel(nextPanel);
+        if (nextPanel != null)
+        {
+            BuildNextPanel(nextPanel);
+        }
     }
 
     private void BuildHoldPanel(RectTransform panel)
@@ -379,6 +419,15 @@ public class GameplayHudController : MonoBehaviour
         }
 
         string[] upcomingCodes = pieceController.GetUpcomingPieceCodes(pieceController.PreviewPieceCount);
+        for (int i = 0; i < sceneNextPreviewSlots.Count; i++)
+        {
+            string pieceCode = i < upcomingCodes.Length ? upcomingCodes[i] : string.Empty;
+            sceneNextPreviewSlots[i].texture = GetPreviewTexture(pieceCode);
+            sceneNextPreviewSlots[i].color = string.IsNullOrWhiteSpace(pieceCode)
+                ? new Color(1f, 1f, 1f, 0f)
+                : Color.white;
+        }
+
         for (int i = 0; i < nextPreviewWidgets.Count; i++)
         {
             string pieceCode = i < upcomingCodes.Length ? upcomingCodes[i] : string.Empty;
@@ -469,21 +518,205 @@ public class GameplayHudController : MonoBehaviour
         switch (pieceCode.Trim().ToUpperInvariant())
         {
             case "I":
-                return pieceITexture;
+                return pieceIRenderTexture != null ? pieceIRenderTexture : pieceITexture;
             case "J":
-                return pieceJTexture;
+                return pieceJRenderTexture != null ? pieceJRenderTexture : pieceJTexture;
             case "L":
-                return pieceLTexture;
+                return pieceLRenderTexture != null ? pieceLRenderTexture : pieceLTexture;
             case "O":
-                return pieceOTexture;
+                return pieceORenderTexture != null ? pieceORenderTexture : pieceOTexture;
             case "S":
-                return pieceSTexture;
+                return pieceSRenderTexture != null ? pieceSRenderTexture : pieceSTexture;
             case "T":
-                return pieceTTexture;
+                return pieceTRenderTexture != null ? pieceTRenderTexture : pieceTTexture;
             case "Z":
-                return pieceZTexture;
+                return pieceZRenderTexture != null ? pieceZRenderTexture : pieceZTexture;
             default:
                 return null;
+        }
+    }
+
+    private void EnsureSceneNextPreviewPanel()
+    {
+        if (nextPiecesRoot == null)
+        {
+            return;
+        }
+
+        sceneNextPreviewPanel = nextPiecesRoot.Find("NextPreviewPanel") as RectTransform;
+        if (sceneNextPreviewPanel == null)
+        {
+            sceneNextPreviewPanel = CreateUiObject("NextPreviewPanel", nextPiecesRoot);
+        }
+
+        sceneNextPreviewPanel.anchorMin = new Vector2(1f, 1f);
+        sceneNextPreviewPanel.anchorMax = new Vector2(1f, 1f);
+        sceneNextPreviewPanel.pivot = new Vector2(1f, 1f);
+        sceneNextPreviewPanel.anchoredPosition = new Vector2(0f, -66f);
+        sceneNextPreviewPanel.sizeDelta = new Vector2(225f, 692f);
+
+        Image background = sceneNextPreviewPanel.GetComponent<Image>();
+        if (background == null)
+        {
+            background = sceneNextPreviewPanel.gameObject.AddComponent<Image>();
+        }
+
+        background.color = NextPanelBackgroundColor;
+        background.raycastTarget = false;
+
+        Outline outline = sceneNextPreviewPanel.GetComponent<Outline>();
+        if (outline == null)
+        {
+            outline = sceneNextPreviewPanel.gameObject.AddComponent<Outline>();
+        }
+
+        outline.effectColor = NextPanelOutlineColor;
+        outline.effectDistance = new Vector2(1f, -1f);
+
+        Shadow bevelShadow = sceneNextPreviewPanel.GetComponent<Shadow>();
+        if (bevelShadow == null)
+        {
+            bevelShadow = sceneNextPreviewPanel.gameObject.AddComponent<Shadow>();
+        }
+
+        bevelShadow.effectColor = NextPanelBevelColor;
+        bevelShadow.effectDistance = Vector2.zero;
+
+        RectTransform innerPanel = sceneNextPreviewPanel.Find("InnerPanel") as RectTransform;
+        if (innerPanel == null)
+        {
+            innerPanel = CreateUiObject("InnerPanel", sceneNextPreviewPanel);
+        }
+
+        Stretch(innerPanel, 2f, 2f, 2f, 2f);
+
+        Image innerPanelImage = innerPanel.GetComponent<Image>();
+        if (innerPanelImage == null)
+        {
+            innerPanelImage = innerPanel.gameObject.AddComponent<Image>();
+        }
+
+        innerPanelImage.color = NextPanelInnerColor;
+        innerPanelImage.raycastTarget = false;
+
+        Outline innerPanelOutline = innerPanel.GetComponent<Outline>();
+        if (innerPanelOutline == null)
+        {
+            innerPanelOutline = innerPanel.gameObject.AddComponent<Outline>();
+        }
+
+        innerPanelOutline.effectColor = NextPanelInnerOutlineColor;
+        innerPanelOutline.effectDistance = Vector2.zero;
+
+        Shadow innerPanelBevelShadow = innerPanel.GetComponent<Shadow>();
+        if (innerPanelBevelShadow == null)
+        {
+            innerPanelBevelShadow = innerPanel.gameObject.AddComponent<Shadow>();
+        }
+
+        innerPanelBevelShadow.effectColor = new Color(1f, 1f, 1f, 0f);
+        innerPanelBevelShadow.effectDistance = Vector2.zero;
+
+        RectTransform bevelHighlight = innerPanel.Find("BevelHighlight") as RectTransform;
+        if (bevelHighlight == null)
+        {
+            bevelHighlight = CreateUiObject("BevelHighlight", innerPanel);
+        }
+
+        bevelHighlight.SetAsFirstSibling();
+        Stretch(bevelHighlight, 0f, 0f, 0f, 0f);
+
+        Image bevelHighlightImage = bevelHighlight.GetComponent<Image>();
+        if (bevelHighlightImage == null)
+        {
+            bevelHighlightImage = bevelHighlight.gameObject.AddComponent<Image>();
+        }
+
+        bevelHighlightImage.color = new Color(1f, 1f, 1f, 0f);
+        bevelHighlightImage.raycastTarget = false;
+
+        Outline bevelHighlightOutline = bevelHighlight.GetComponent<Outline>();
+        if (bevelHighlightOutline == null)
+        {
+            bevelHighlightOutline = bevelHighlight.gameObject.AddComponent<Outline>();
+        }
+
+        bevelHighlightOutline.effectColor = new Color(1f, 1f, 1f, 0f);
+        bevelHighlightOutline.effectDistance = Vector2.zero;
+
+        RectTransform stackRoot = innerPanel.Find("PreviewStack") as RectTransform;
+        if (stackRoot == null)
+        {
+            stackRoot = CreateUiObject("PreviewStack", innerPanel);
+        }
+
+        Stretch(stackRoot, 16f, 16f, 18f, 18f);
+
+        VerticalLayoutGroup layout = stackRoot.GetComponent<VerticalLayoutGroup>();
+        if (layout == null)
+        {
+            layout = stackRoot.gameObject.AddComponent<VerticalLayoutGroup>();
+        }
+
+        layout.padding = new RectOffset(14, 14, 14, 14);
+        layout.spacing = 8f;
+        layout.childAlignment = TextAnchor.UpperCenter;
+        layout.childForceExpandWidth = true;
+        layout.childForceExpandHeight = false;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+
+        sceneNextPreviewSlots.Clear();
+        for (int i = 0; i < 5; i++)
+        {
+            string slotName = "PreviewSlot" + i;
+            RectTransform slotRoot = stackRoot.Find(slotName) as RectTransform;
+            if (slotRoot == null)
+            {
+                slotRoot = CreateUiObject(slotName, stackRoot);
+            }
+
+            AddLayoutElement(slotRoot.gameObject, 0f, 120f);
+
+            Image slotBackground = slotRoot.GetComponent<Image>();
+            if (slotBackground == null)
+            {
+                slotBackground = slotRoot.gameObject.AddComponent<Image>();
+            }
+
+            slotBackground.color = new Color(1f, 1f, 1f, 0f);
+            slotBackground.raycastTarget = false;
+
+            RectTransform previewImageRect = slotRoot.Find("PreviewImage") as RectTransform;
+            if (previewImageRect == null)
+            {
+                previewImageRect = CreateUiObject("PreviewImage", slotRoot);
+            }
+
+            previewImageRect.anchorMin = new Vector2(0.5f, 0.5f);
+            previewImageRect.anchorMax = new Vector2(0.5f, 0.5f);
+            previewImageRect.pivot = new Vector2(0.5f, 0.5f);
+            previewImageRect.anchoredPosition = Vector2.zero;
+            previewImageRect.sizeDelta = new Vector2(104f, 104f);
+
+            AspectRatioFitter aspectRatioFitter = previewImageRect.GetComponent<AspectRatioFitter>();
+            if (aspectRatioFitter == null)
+            {
+                aspectRatioFitter = previewImageRect.gameObject.AddComponent<AspectRatioFitter>();
+            }
+
+            aspectRatioFitter.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
+            aspectRatioFitter.aspectRatio = 1f;
+
+            RawImage previewImage = previewImageRect.GetComponent<RawImage>();
+            if (previewImage == null)
+            {
+                previewImage = previewImageRect.gameObject.AddComponent<RawImage>();
+            }
+
+            previewImage.color = new Color(1f, 1f, 1f, 0f);
+            previewImage.raycastTarget = false;
+            sceneNextPreviewSlots.Add(previewImage);
         }
     }
 
@@ -500,6 +733,19 @@ public class GameplayHudController : MonoBehaviour
 #endif
     }
 
+    private void ResolvePreviewRenderTextures()
+    {
+#if UNITY_EDITOR
+        pieceIRenderTexture = ResolvePreviewRenderTexture(pieceIRenderTexture, "Assets/RenderTextures/RTPieceI.renderTexture");
+        pieceJRenderTexture = ResolvePreviewRenderTexture(pieceJRenderTexture, "Assets/RenderTextures/RTPieceJ.renderTexture");
+        pieceLRenderTexture = ResolvePreviewRenderTexture(pieceLRenderTexture, "Assets/RenderTextures/RTPieceL.renderTexture");
+        pieceORenderTexture = ResolvePreviewRenderTexture(pieceORenderTexture, "Assets/RenderTextures/RTPieceO.renderTexture");
+        pieceSRenderTexture = ResolvePreviewRenderTexture(pieceSRenderTexture, "Assets/RenderTextures/RTPieceS.renderTexture");
+        pieceTRenderTexture = ResolvePreviewRenderTexture(pieceTRenderTexture, "Assets/RenderTextures/RTPieceT.renderTexture");
+        pieceZRenderTexture = ResolvePreviewRenderTexture(pieceZRenderTexture, "Assets/RenderTextures/RTPieceZ.renderTexture");
+#endif
+    }
+
 #if UNITY_EDITOR
     private static Texture2D ResolvePreviewTexture(Texture2D existingTexture, string assetPath)
     {
@@ -509,6 +755,16 @@ public class GameplayHudController : MonoBehaviour
         }
 
         return AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+    }
+
+    private static RenderTexture ResolvePreviewRenderTexture(RenderTexture existingRenderTexture, string assetPath)
+    {
+        if (existingRenderTexture != null)
+        {
+            return existingRenderTexture;
+        }
+
+        return AssetDatabase.LoadAssetAtPath<RenderTexture>(assetPath);
     }
 #endif
 
