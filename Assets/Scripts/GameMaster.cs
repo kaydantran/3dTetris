@@ -182,8 +182,9 @@ public class GameMaster : MonoBehaviour
 
         totalLayersCleared += count;
         layersSinceLastBump += count;
-        score += GetLineClearScore(count, CalculateQuickClearBonus(count));
-        lastLayerClearTime = Time.time;
+        float currentGameplayTime = CalculateElapsedGameplayTime();
+        score += GetLineClearScore(count, CalculateQuickClearBonus(count, currentGameplayTime));
+        lastLayerClearTime = currentGameplayTime;
 
         while (layersSinceLastBump >= layersPerSpeedBump)
         {
@@ -276,15 +277,13 @@ public class GameMaster : MonoBehaviour
         return Mathf.Max(0f, Time.time - gameplayStartTime);
     }
 
-    private int CalculateQuickClearBonus(int clearedLayers)
+    private int CalculateQuickClearBonus(int clearedLayers, float currentGameplayTime)
     {
-        if (lastLayerClearTime < 0f)
-        {
-            return 0;
-        }
-
         float bonusWindow = Mathf.Max(0.1f, quickClearBonusWindow);
-        float timeSinceLastClear = Mathf.Max(0f, Time.time - lastLayerClearTime);
+        float referenceTime = lastLayerClearTime >= 0f
+            ? lastLayerClearTime
+            : Mathf.Max(0f, currentGameplayTime - bonusWindow);
+        float timeSinceLastClear = Mathf.Max(0f, currentGameplayTime - referenceTime);
         float urgency = 1f - Mathf.Clamp01(timeSinceLastClear / bonusWindow);
         if (urgency <= 0f)
         {

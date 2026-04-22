@@ -424,13 +424,13 @@ public class ActivePieceController : MonoBehaviour
     private bool TryRotateOnViewedPlane(float angle)
     {
         Vector3 axis = GetCameraRelativeForward();
-        return TryRotate(axis, angle);
+        return TryRotate(axis, angle, RotationKickMode.ViewedPlane);
     }
 
     private bool TryRotateOnHorizontalScreenAxis(float angle)
     {
         Vector3 axis = GetCameraRelativeRight();
-        return TryRotate(axis, angle);
+        return TryRotate(axis, angle, RotationKickMode.ScreenVerticalPlane);
     }
 
     private void MoveUntilBlocked(Vector3Int delta, bool playerInitiated = true)
@@ -520,26 +520,16 @@ public class ActivePieceController : MonoBehaviour
         return true;
     }
 
-    private bool TryRotate(Vector3 worldAxis, float angle)
+    private bool TryRotate(Vector3 worldAxis, float angle, RotationKickMode kickMode)
     {
         if (activePiece == null) return false;
 
         string pieceCode = GetActivePieceCode();
-        Quaternion delta = Quaternion.AngleAxis(angle, worldAxis);
+        Vector3 normalizedAxis = worldAxis.sqrMagnitude > 0.0001f ? worldAxis.normalized : Vector3.forward;
+        Quaternion delta = Quaternion.AngleAxis(angle, normalizedAxis);
         Quaternion newRotation = delta * activePiece.transform.rotation;
-        int rotationDelta = angle < 0f ? 1 : -1;
-        int fromState = activeRotationState;
-        int toState = Mod(activeRotationState + rotationDelta, 4);
 
-        if (grid.IsValidPosition(activePiece.transform, activePiece.transform.position, newRotation))
-        {
-            activePiece.transform.rotation = newRotation;
-            activeRotationState = toState;
-            OnPieceMovedOrRotated();
-            return true;
-        }
-
-        Vector3 horizontalKickAxis = Vector3.Cross(Vector3.up, worldAxis);
+        Vector3 horizontalKickAxis = Vector3.Cross(Vector3.up, normalizedAxis);
         if (horizontalKickAxis.sqrMagnitude < 0.0001f)
         {
             horizontalKickAxis = Vector3.right;
@@ -549,13 +539,47 @@ public class ActivePieceController : MonoBehaviour
             horizontalKickAxis.Normalize();
         }
 
+        int fromState = GetKickPlaneRotationState(activePiece.transform.rotation, horizontalKickAxis, Vector3.up);
+        int toState = GetKickPlaneRotationState(newRotation, horizontalKickAxis, Vector3.up);
+
+        if (grid.IsValidPosition(activePiece.transform, activePiece.transform.position, newRotation))
+        {
+            activePiece.transform.rotation = newRotation;
+            activeRotationState = toState;
+            OnPieceMovedOrRotated();
+            return true;
+        }
+
         Vector2Int[] kicks = GetKickOffsets(pieceCode, fromState, toState);
 
+        if (TryApplyKickOffsets(newRotation, toState, kicks, horizontalKickAxis))
+        {
+            return true;
+        }
+
+        if (kickMode == RotationKickMode.ScreenVerticalPlane
+            && (string.Equals(pieceCode, "J", StringComparison.Ordinal) || string.Equals(pieceCode, "L", StringComparison.Ordinal)))
+        {
+            Vector2Int[] mirroredKicks = GetMirroredKickOffsets(kicks);
+            if (TryApplyKickOffsets(newRotation, toState, mirroredKicks, horizontalKickAxis))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool TryApplyKickOffsets(Quaternion newRotation, int toState, Vector2Int[] kicks, Vector3 horizontalKickAxis)
+    {
         foreach (Vector2Int kick in kicks)
         {
             Vector3 kickOffset = horizontalKickAxis * kick.x + Vector3.up * kick.y;
             Vector3 testPosition = activePiece.transform.position + kickOffset;
-            if (!grid.IsValidPosition(activePiece.transform, testPosition, newRotation)) continue;
+            if (!grid.IsValidPosition(activePiece.transform, testPosition, newRotation))
+            {
+                continue;
+            }
 
             activePiece.transform.position = testPosition;
             activePiece.transform.rotation = newRotation;
@@ -2178,6 +2202,45 @@ public class ActivePieceController : MonoBehaviour
         return remainder < 0 ? remainder + modulus : remainder;
     }
 
+    private static Vector2Int[] GetMirroredKickOffsets(Vector2Int[] kicks)
+    {
+        if (kicks == null || kicks.Length == 0)
+        {
+            return GetFallbackKickOffsets();
+        }
+
+        Vector2Int[] mirrored = new Vector2Int[kicks.Length];
+        for (int i = 0; i < kicks.Length; i++)
+        {
+            mirrored[i] = new Vector2Int(-kicks[i].x, kicks[i].y);
+        }
+
+        return mirrored;
+    }
+
+    private static int GetKickPlaneRotationState(Quaternion rotation, Vector3 planeRightAxis, Vector3 planeUpAxis)
+    {
+        Vector3 pieceUp = rotation * Vector3.up;
+        Vector2 planeProjection = new Vector2(
+            Vector3.Dot(pieceUp, planeRightAxis),
+            Vector3.Dot(pieceUp, planeUpAxis));
+
+        if (planeProjection.sqrMagnitude < 0.0001f)
+        {
+            Vector3 pieceForward = rotation * Vector3.forward;
+            planeProjection = new Vector2(
+                Vector3.Dot(pieceForward, planeRightAxis),
+                Vector3.Dot(pieceForward, planeUpAxis));
+        }
+
+        if (Mathf.Abs(planeProjection.x) > Mathf.Abs(planeProjection.y))
+        {
+            return planeProjection.x >= 0f ? 1 : 3;
+        }
+
+        return planeProjection.y >= 0f ? 0 : 2;
+    }
+
     private static Vector2Int[] GetKickOffsets(string pieceCode, int fromState, int toState)
     {
         if (string.Equals(pieceCode, "I", StringComparison.Ordinal))
@@ -2325,6 +2388,12 @@ public class ActivePieceController : MonoBehaviour
             new Vector2Int(0, 1),
             new Vector2Int(0, -1)
         };
+    }
+
+    private enum RotationKickMode
+    {
+        ViewedPlane,
+        ScreenVerticalPlane
     }
 
     private void NotifyStateChanged()
