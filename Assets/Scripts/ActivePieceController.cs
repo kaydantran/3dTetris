@@ -146,6 +146,7 @@ public class ActivePieceController : MonoBehaviour
     private void Awake()
     {
         ApplyControlDefaults();
+        ApplySavedTimingSettings();
         flashBlock = new MaterialPropertyBlock();
 
         if (grid == null) grid = FindAnyObjectByType<TetrisGrid>();
@@ -198,6 +199,12 @@ public class ActivePieceController : MonoBehaviour
         softDropKey = KeyCode.RightShift;
         elevateViewKey = KeyCode.U;
         flattenViewKey = KeyCode.N;
+    }
+
+    private void ApplySavedTimingSettings()
+    {
+        delayedAutoShift = Mathf.Max(0f, GameplayTimingSettings.GetDasMilliseconds()) / 1000f;
+        autoRepeatRate = Mathf.Max(0f, GameplayTimingSettings.GetArrMilliseconds()) / 1000f;
     }
 
     private void RebuildMoveStates()
@@ -557,14 +564,33 @@ public class ActivePieceController : MonoBehaviour
             return true;
         }
 
-        if (kickMode == RotationKickMode.ScreenVerticalPlane
-            && (string.Equals(pieceCode, "J", StringComparison.Ordinal) || string.Equals(pieceCode, "L", StringComparison.Ordinal)))
+        if (ShouldTryMirroredKickOffsets(pieceCode))
         {
             Vector2Int[] mirroredKicks = GetMirroredKickOffsets(kicks);
             if (TryApplyKickOffsets(newRotation, toState, mirroredKicks, horizontalKickAxis))
             {
                 return true;
             }
+        }
+
+        return false;
+    }
+
+    private static bool ShouldTryMirroredKickOffsets(string pieceCode)
+    {
+        if (string.IsNullOrEmpty(pieceCode))
+        {
+            return false;
+        }
+
+        if (string.Equals(pieceCode, "I", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (string.Equals(pieceCode, "J", StringComparison.Ordinal) || string.Equals(pieceCode, "L", StringComparison.Ordinal))
+        {
+            return true;
         }
 
         return false;
@@ -1510,14 +1536,26 @@ public class ActivePieceController : MonoBehaviour
 
         bool moveLeftHeld = Input.GetKey(moveLeftKey);
         bool moveRightHeld = Input.GetKey(moveRightKey);
+        bool moveInwardHeld = Input.GetKey(moveInwardKey);
+        bool moveOutwardHeld = Input.GetKey(moveOutwardKey);
 
-        if (moveLeftHeld == moveRightHeld) return;
+        if (moveLeftHeld != moveRightHeld)
+        {
+            Vector3Int lateralShiftDelta = moveLeftHeld
+                ? ResolveViewMoveDelta(ViewMoveDirection.Left)
+                : ResolveViewMoveDelta(ViewMoveDirection.Right);
 
-        Vector3Int shiftDelta = moveLeftHeld
-            ? ResolveViewMoveDelta(ViewMoveDirection.Left)
-            : ResolveViewMoveDelta(ViewMoveDirection.Right);
+            MoveUntilBlocked(lateralShiftDelta, playerInitiated: false);
+        }
 
-        MoveUntilBlocked(shiftDelta, playerInitiated: false);
+        if (moveOutwardHeld != moveInwardHeld)
+        {
+            Vector3Int depthShiftDelta = moveOutwardHeld
+                ? ResolveViewMoveDelta(ViewMoveDirection.Forward)
+                : ResolveViewMoveDelta(ViewMoveDirection.Back);
+
+            MoveUntilBlocked(depthShiftDelta, playerInitiated: false);
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -2109,6 +2147,7 @@ public class ActivePieceController : MonoBehaviour
         set
         {
             delayedAutoShift = Mathf.Max(0f, value) / 1000f;
+            GameplayTimingSettings.SaveDasMilliseconds(delayedAutoShift * 1000f);
             ResetHeldMoveStates();
             NotifyTimingSettingsChanged();
         }
@@ -2120,6 +2159,7 @@ public class ActivePieceController : MonoBehaviour
         set
         {
             autoRepeatRate = Mathf.Max(0f, value) / 1000f;
+            GameplayTimingSettings.SaveArrMilliseconds(autoRepeatRate * 1000f);
             ResetHeldMoveStates();
             NotifyTimingSettingsChanged();
         }

@@ -76,6 +76,7 @@ public class GameplayHudController : MonoBehaviour
     private RectTransform pausePanelRoot;
     private RectTransform sceneHoldPreviewPanel;
     private RectTransform sceneNextPreviewPanel;
+    private Button restartButton;
     private Font uiFont;
     private Text scoreValueText;
     private Text timeValueText;
@@ -144,6 +145,7 @@ public class GameplayHudController : MonoBehaviour
         }
 
         HandlePauseToggleInput();
+        HandleRestartShortcutInput();
         HandleControlsToggleInput();
         RefreshTimeDisplay();
         RefreshPiecesPerSecond();
@@ -379,6 +381,15 @@ public class GameplayHudController : MonoBehaviour
                 if (arrTransform != null)
                 {
                     pauseArrInputField = arrTransform.GetComponent<TMP_InputField>();
+                }
+            }
+
+            if (restartButton == null)
+            {
+                Transform restartButtonTransform = FindDescendantByName(pausedCanvas.transform, "RestartButton");
+                if (restartButtonTransform != null)
+                {
+                    restartButton = restartButtonTransform.GetComponent<Button>();
                 }
             }
         }
@@ -1003,6 +1014,16 @@ public class GameplayHudController : MonoBehaviour
         gameMaster.TogglePause();
     }
 
+    private void HandleRestartShortcutInput()
+    {
+        if (gameMaster == null || !Input.GetKeyDown(KeyCode.R) || IsTextInputFocused())
+        {
+            return;
+        }
+
+        gameMaster.RestartGameplayScene();
+    }
+
     private void RefreshPauseInfoText()
     {
         if (pauseInfoTmpText == null || gameMaster == null)
@@ -1090,6 +1111,12 @@ public class GameplayHudController : MonoBehaviour
             pauseArrInputField.onEndEdit.RemoveListener(HandleArrEdited);
             pauseArrInputField.onEndEdit.AddListener(HandleArrEdited);
         }
+
+        if (restartButton != null)
+        {
+            restartButton.onClick.RemoveListener(HandleRestartButtonPressed);
+            restartButton.onClick.AddListener(HandleRestartButtonPressed);
+        }
     }
 
     private void ApplyPauseCanvasState()
@@ -1103,6 +1130,16 @@ public class GameplayHudController : MonoBehaviour
         pausedCanvas.enabled = isPaused;
         RefreshPauseInfoText();
         RefreshTimingFields();
+    }
+
+    private void HandleRestartButtonPressed()
+    {
+        if (gameMaster == null)
+        {
+            return;
+        }
+
+        gameMaster.RestartGameplayScene();
     }
 
     private void HandleControlsToggleInput()

@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -214,6 +215,18 @@ public class GameMaster : MonoBehaviour
     public void TogglePause()
     {
         SetPaused(!isPaused);
+    }
+
+    public void RestartGameplayScene()
+    {
+        ResumeFromPauseIfNeeded();
+        RestoreTimeScale();
+
+        Scene activeScene = SceneManager.GetActiveScene();
+        if (activeScene.IsValid())
+        {
+            SceneManager.LoadScene(activeScene.name);
+        }
     }
 
     public void SetPaused(bool paused)
