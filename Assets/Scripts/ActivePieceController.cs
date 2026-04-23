@@ -971,6 +971,7 @@ public class ActivePieceController : MonoBehaviour
             hasHeldPiece = true;
             SpawnNextBagPiece();
             hasSwappedThisDrop = true;
+            NotifyStateChanged();
             return;
         }
 
@@ -978,6 +979,7 @@ public class ActivePieceController : MonoBehaviour
         heldPieceIdentity = currentIdentity;
         SpawnPiece(identityToSpawn);
         hasSwappedThisDrop = true;
+        NotifyStateChanged();
     }
 
     private PieceIdentity GetActivePieceIdentity()
@@ -2172,6 +2174,45 @@ public class ActivePieceController : MonoBehaviour
     public bool CanUseHold => activePiece != null && !hasSwappedThisDrop;
     public int HeldPiecePrefabIndex => hasHeldPiece ? heldPieceIdentity.PrefabIndex : -1;
     public int PreviewPieceCount => ModernPreviewCount;
+    public Material GhostMaterial => ghostMaterial;
+
+    public void ApplyGhostAppearance(Renderer renderer, Material sourceMaterial = null)
+    {
+        if (renderer == null)
+        {
+            return;
+        }
+
+        if (ghostMaterial != null)
+        {
+            Material[] overrideMaterials = renderer.sharedMaterials;
+            if (overrideMaterials == null || overrideMaterials.Length == 0)
+            {
+                overrideMaterials = new[] { ghostMaterial };
+            }
+            else
+            {
+                for (int i = 0; i < overrideMaterials.Length; i++)
+                {
+                    overrideMaterials[i] = ghostMaterial;
+                }
+            }
+
+            renderer.sharedMaterials = overrideMaterials;
+        }
+
+        ApplyGhostPropertyBlock(renderer, sourceMaterial);
+    }
+
+    public void ClearRendererVisualOverride(Renderer renderer)
+    {
+        if (renderer == null)
+        {
+            return;
+        }
+
+        renderer.SetPropertyBlock(null);
+    }
 
     public int[] GetUpcomingPiecePrefabIndices(int count)
     {
@@ -2237,6 +2278,29 @@ public class ActivePieceController : MonoBehaviour
 
         PieceTag tag = activePiece.GetComponent<PieceTag>();
         return tag != null ? GetPieceCode(tag.PrefabIndex) : string.Empty;
+    }
+
+    private void ApplyGhostPropertyBlock(Renderer renderer, Material sourceMaterial)
+    {
+        if (renderer == null)
+        {
+            return;
+        }
+
+        MaterialPropertyBlock ghostBlock = new MaterialPropertyBlock();
+        Color sourceColor = GetRendererBaseColor(sourceMaterial);
+        Color ghostColor = Color.Lerp(Color.white, sourceColor, ghostTintStrength);
+        ghostColor.a = ghostOpacity;
+
+        Material targetMaterial = renderer.sharedMaterial;
+        if (targetMaterial != null)
+        {
+            if (targetMaterial.HasProperty(BaseColorID)) ghostBlock.SetColor(BaseColorID, ghostColor);
+            if (targetMaterial.HasProperty(ColorID)) ghostBlock.SetColor(ColorID, ghostColor);
+            if (targetMaterial.HasProperty(EmissionColorID)) ghostBlock.SetColor(EmissionColorID, Color.black);
+        }
+
+        renderer.SetPropertyBlock(ghostBlock);
     }
 
     private static int Mod(int value, int modulus)

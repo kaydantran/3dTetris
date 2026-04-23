@@ -76,6 +76,7 @@ public class GameplayHudController : MonoBehaviour
     private RectTransform pausePanelRoot;
     private RectTransform sceneHoldPreviewPanel;
     private RectTransform sceneNextPreviewPanel;
+    private Transform scenePreviewStageRoot;
     private Button restartButton;
     private Font uiFont;
     private Text scoreValueText;
@@ -90,6 +91,7 @@ public class GameplayHudController : MonoBehaviour
     private RawImage sceneHoldPreviewSlot;
     private readonly List<PiecePreviewWidget> nextPreviewWidgets = new List<PiecePreviewWidget>();
     private readonly List<RawImage> sceneNextPreviewSlots = new List<RawImage>();
+    private readonly Dictionary<string, PreviewPieceMaterialState> previewPieceStates = new Dictionary<string, PreviewPieceMaterialState>(StringComparer.OrdinalIgnoreCase);
     private Material holdPreviewGhostMaterial;
     private bool areControlsExpanded;
     private bool isBound;
@@ -116,6 +118,7 @@ public class GameplayHudController : MonoBehaviour
         ResolveHudBindings();
         ResolvePreviewRenderTextures();
         ResolvePreviewSprites();
+        ResolveScenePreviewPieces();
         EnsureEventSystem();
         EnsureUi();
         BindEvents();
@@ -128,6 +131,7 @@ public class GameplayHudController : MonoBehaviour
         ResolveHudBindings();
         ResolvePreviewRenderTextures();
         ResolvePreviewSprites();
+        ResolveScenePreviewPieces();
     }
 #endif
 
@@ -154,10 +158,13 @@ public class GameplayHudController : MonoBehaviour
     private void OnDisable()
     {
         UnbindEvents();
+        RestoreScenePreviewPieceMaterials();
     }
 
     private void OnDestroy()
     {
+        RestoreScenePreviewPieceMaterials();
+
         if (holdPreviewGhostMaterial != null)
         {
             Destroy(holdPreviewGhostMaterial);
@@ -573,10 +580,12 @@ public class GameplayHudController : MonoBehaviour
         string heldPieceCode = pieceController.GetHeldPieceCode();
         Texture heldPreviewTexture = GetPreviewTexture(heldPieceCode);
         bool showHeldGhostState = !pieceController.CanUseHold && !string.IsNullOrWhiteSpace(heldPieceCode);
+        bool appliedSceneGhostMaterial = ApplyScenePreviewGhostState(heldPieceCode, showHeldGhostState);
+        bool useFallbackGhostLook = showHeldGhostState && !appliedSceneGhostMaterial;
 
         if (holdPreviewWidget != null)
         {
-            holdPreviewWidget.SetPiece(heldPieceCode, heldPreviewTexture, showHeldGhostState);
+            holdPreviewWidget.SetPiece(heldPieceCode, heldPreviewTexture, useFallbackGhostLook);
         }
 
         if (sceneHoldPreviewSlot != null)
@@ -584,8 +593,8 @@ public class GameplayHudController : MonoBehaviour
             sceneHoldPreviewSlot.texture = heldPreviewTexture;
             sceneHoldPreviewSlot.color = string.IsNullOrWhiteSpace(heldPieceCode)
                 ? new Color(1f, 1f, 1f, 0f)
-                : showHeldGhostState ? HoldPreviewGhostTint : Color.white;
-            sceneHoldPreviewSlot.material = showHeldGhostState ? GetOrCreateHoldPreviewGhostMaterial() : null;
+                : useFallbackGhostLook ? HoldPreviewGhostTint : Color.white;
+            sceneHoldPreviewSlot.material = useFallbackGhostLook ? GetOrCreateHoldPreviewGhostMaterial() : null;
         }
 
         string[] upcomingCodes = pieceController.GetUpcomingPieceCodes(pieceController.PreviewPieceCount);
@@ -1186,6 +1195,102 @@ public class GameplayHudController : MonoBehaviour
         return holdPreviewGhostMaterial;
     }
 
+    private bool ApplyScenePreviewGhostState(string heldPieceCode, bool showHeldGhostState)
+    {
+        ResolveScenePreviewPieces();
+
+        if (previewPieceStates.Count == 0)
+        {
+            return false;
+        }
+
+        Material ghostMaterial = pieceController != null ? pieceController.GhostMaterial : null;
+        if (ghostMaterial == null)
+        {
+            RestoreScenePreviewPieceMaterials();
+            return false;
+        }
+
+        bool applied = false;
+        foreach (KeyValuePair<string, PreviewPieceMaterialState> pair in previewPieceStates)
+        {
+            bool shouldUseGhostMaterial = showHeldGhostState
+                && string.Equals(pair.Key, heldPieceCode, StringComparison.OrdinalIgnoreCase);
+
+            pair.Value.ApplyMaterialOverride(pieceController, shouldUseGhostMaterial ? ghostMaterial : null);
+            applied |= shouldUseGhostMaterial;
+        }
+
+        return applied;
+    }
+
+    private void ResolveScenePreviewPieces()
+    {
+        if (scenePreviewStageRoot == null)
+        {
+            Transform[] transforms = FindObjectsByType<Transform>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            foreach (Transform candidate in transforms)
+            {
+                if (string.Equals(candidate.name, "NextPreviewStage", StringComparison.OrdinalIgnoreCase))
+                {
+                    scenePreviewStageRoot = candidate;
+                    break;
+                }
+            }
+        }
+
+        if (scenePreviewStageRoot == null)
+        {
+            previewPieceStates.Clear();
+            return;
+        }
+
+        bool needsRebuild = previewPieceStates.Count == 0;
+        if (!needsRebuild)
+        {
+            foreach (PreviewPieceMaterialState state in previewPieceStates.Values)
+            {
+                if (!state.IsValid)
+                {
+                    needsRebuild = true;
+                    break;
+                }
+            }
+        }
+
+        if (!needsRebuild)
+        {
+            return;
+        }
+
+        previewPieceStates.Clear();
+
+        foreach (string pieceCode in PreviewDefinitions.Keys)
+        {
+            Transform previewPieceRoot = FindDescendantByName(scenePreviewStageRoot, "PreviewPiece" + pieceCode);
+            if (previewPieceRoot == null)
+            {
+                continue;
+            }
+
+            Renderer[] renderers = previewPieceRoot.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0)
+            {
+                continue;
+            }
+
+            previewPieceStates[pieceCode] = new PreviewPieceMaterialState(renderers);
+        }
+    }
+
+    private void RestoreScenePreviewPieceMaterials()
+    {
+        foreach (PreviewPieceMaterialState state in previewPieceStates.Values)
+        {
+            state.RestoreOriginalMaterials(pieceController);
+        }
+    }
+
     private static bool IsTextInputFocused()
     {
         if (EventSystem.current == null)
@@ -1498,6 +1603,68 @@ public class GameplayHudController : MonoBehaviour
 
         public Color Color { get; }
         public Vector2Int[] OccupiedCells { get; }
+    }
+
+    private sealed class PreviewPieceMaterialState
+    {
+        private readonly Renderer[] renderers;
+        private readonly Material[][] originalSharedMaterials;
+
+        public PreviewPieceMaterialState(Renderer[] renderers)
+        {
+            this.renderers = renderers ?? Array.Empty<Renderer>();
+            originalSharedMaterials = new Material[this.renderers.Length][];
+            for (int i = 0; i < this.renderers.Length; i++)
+            {
+                originalSharedMaterials[i] = this.renderers[i] != null
+                    ? this.renderers[i].sharedMaterials
+                    : Array.Empty<Material>();
+            }
+        }
+
+        public bool IsValid
+        {
+            get
+            {
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    if (renderers[i] == null)
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+        }
+
+        public void ApplyMaterialOverride(ActivePieceController controller, Material overrideMaterial)
+        {
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer renderer = renderers[i];
+                if (renderer == null)
+                {
+                    continue;
+                }
+
+                Material[] sourceMaterials = originalSharedMaterials[i];
+                if (overrideMaterial == null)
+                {
+                    renderer.sharedMaterials = sourceMaterials;
+                    controller?.ClearRendererVisualOverride(renderer);
+                    continue;
+                }
+
+                Material sourceMaterial = sourceMaterials.Length > 0 ? sourceMaterials[0] : null;
+                controller?.ApplyGhostAppearance(renderer, sourceMaterial);
+            }
+        }
+
+        public void RestoreOriginalMaterials(ActivePieceController controller)
+        {
+            ApplyMaterialOverride(controller, null);
+        }
     }
 
     private sealed class PiecePreviewWidget
