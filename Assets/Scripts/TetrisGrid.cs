@@ -26,6 +26,9 @@ public class TetrisGrid : MonoBehaviour
     [Header("Runtime Boundary Visuals")]
     [Tooltip("Draws the playfield boundary and top-out line in the Game view at runtime.")]
     [SerializeField] private bool showRuntimeBoundaryVisuals = true;
+    [Tooltip("Optional camera used to decide which grid side is currently facing the player.")]
+    [SerializeField] private Camera gameplayCamera;
+    [SerializeField] private OrbitCamera orbitCamera;
     [SerializeField] private Color boundaryColor = new Color(0.25f, 0.75f, 1f, 0.75f);
     [SerializeField] private Color floorGridColor = new Color(0.25f, 0.75f, 1f, 0.18f);
     [SerializeField] private Color topBoundaryColor = new Color(1f, 0.35f, 0.35f, 0.95f);
@@ -44,6 +47,8 @@ public class TetrisGrid : MonoBehaviour
     private GameObject boundaryVisualRoot;
     private Material runtimeLineMaterial;
     private bool runtimeBoundaryVisualsDirty;
+    private readonly Dictionary<BoundaryFace, GameObject> boundaryFaceRoots = new Dictionary<BoundaryFace, GameObject>();
+    private BoundaryFaceSet activeBoundaryFaces = BoundaryFaceSet.None;
 
     public int Width => width;
     public int Depth => depth;
@@ -56,6 +61,7 @@ public class TetrisGrid : MonoBehaviour
     private void Awake()
     {
         EnsureCellArray();
+        ResolveGameplayCamera();
         runtimeBoundaryVisualsDirty = true;
     }
 
@@ -67,6 +73,7 @@ public class TetrisGrid : MonoBehaviour
     private void LateUpdate()
     {
         RefreshRuntimeBoundaryVisualsIfNeeded();
+        UpdateRuntimeBoundaryFaceVisibility();
     }
 
     private void OnDestroy()
@@ -91,6 +98,7 @@ public class TetrisGrid : MonoBehaviour
         if (Application.isPlaying)
         {
             EnsureCellArray();
+            ResolveGameplayCamera();
             runtimeBoundaryVisualsDirty = true;
         }
     }
@@ -479,6 +487,9 @@ public class TetrisGrid : MonoBehaviour
 
     private void RebuildRuntimeBoundaryVisuals()
     {
+        boundaryFaceRoots.Clear();
+        activeBoundaryFaces = BoundaryFaceSet.None;
+
         if (boundaryVisualRoot != null)
         {
             Destroy(boundaryVisualRoot);
@@ -492,21 +503,6 @@ public class TetrisGrid : MonoBehaviour
 
         Vector3 min = new Vector3(-0.5f, -0.5f, -0.5f);
         Vector3 max = new Vector3(width - 0.5f, height - 0.5f, depth - 0.5f);
-
-        CreateLine("BottomFront", min, new Vector3(max.x, min.y, min.z), boundaryColor, boundaryLineWidth);
-        CreateLine("BottomBack", new Vector3(min.x, min.y, max.z), new Vector3(max.x, min.y, max.z), boundaryColor, boundaryLineWidth);
-        CreateLine("BottomLeft", min, new Vector3(min.x, min.y, max.z), boundaryColor, boundaryLineWidth);
-        CreateLine("BottomRight", new Vector3(max.x, min.y, min.z), new Vector3(max.x, min.y, max.z), boundaryColor, boundaryLineWidth);
-
-        CreateLine("TopFront", new Vector3(min.x, max.y, min.z), new Vector3(max.x, max.y, min.z), boundaryColor, boundaryLineWidth);
-        CreateLine("TopBack", new Vector3(min.x, max.y, max.z), max, boundaryColor, boundaryLineWidth);
-        CreateLine("TopLeft", new Vector3(min.x, max.y, min.z), new Vector3(min.x, max.y, max.z), boundaryColor, boundaryLineWidth);
-        CreateLine("TopRight", new Vector3(max.x, max.y, min.z), new Vector3(max.x, max.y, max.z), boundaryColor, boundaryLineWidth);
-
-        CreateLine("VerticalFL", min, new Vector3(min.x, max.y, min.z), boundaryColor, boundaryLineWidth);
-        CreateLine("VerticalFR", new Vector3(max.x, min.y, min.z), new Vector3(max.x, max.y, min.z), boundaryColor, boundaryLineWidth);
-        CreateLine("VerticalBL", new Vector3(min.x, min.y, max.z), new Vector3(min.x, max.y, max.z), boundaryColor, boundaryLineWidth);
-        CreateLine("VerticalBR", max, new Vector3(max.x, min.y, max.z), boundaryColor, boundaryLineWidth);
 
         for (int x = 0; x <= width; x++)
         {
@@ -527,16 +523,50 @@ public class TetrisGrid : MonoBehaviour
         }
 
         float topLineY = TopBoundaryY + 0.5f;
-        CreateLine("TopBoundaryFront", new Vector3(-0.5f, topLineY, -0.5f), new Vector3(width - 0.5f, topLineY, -0.5f), topBoundaryColor, boundaryLineWidth * 1.2f);
-        CreateLine("TopBoundaryBack", new Vector3(-0.5f, topLineY, depth - 0.5f), new Vector3(width - 0.5f, topLineY, depth - 0.5f), topBoundaryColor, boundaryLineWidth * 1.2f);
-        CreateLine("TopBoundaryLeft", new Vector3(-0.5f, topLineY, -0.5f), new Vector3(-0.5f, topLineY, depth - 0.5f), topBoundaryColor, boundaryLineWidth * 1.2f);
-        CreateLine("TopBoundaryRight", new Vector3(width - 0.5f, topLineY, -0.5f), new Vector3(width - 0.5f, topLineY, depth - 0.5f), topBoundaryColor, boundaryLineWidth * 1.2f);
+        CreateFaceVisuals(
+            BoundaryFace.Front,
+            ("BottomFront", min, new Vector3(max.x, min.y, min.z), boundaryColor, boundaryLineWidth),
+            ("TopFront", new Vector3(min.x, max.y, min.z), new Vector3(max.x, max.y, min.z), boundaryColor, boundaryLineWidth),
+            ("VerticalFL", min, new Vector3(min.x, max.y, min.z), boundaryColor, boundaryLineWidth),
+            ("VerticalFR", new Vector3(max.x, min.y, min.z), new Vector3(max.x, max.y, min.z), boundaryColor, boundaryLineWidth),
+            ("TopBoundaryFront", new Vector3(min.x, topLineY, min.z), new Vector3(max.x, topLineY, min.z), topBoundaryColor, boundaryLineWidth * 1.2f));
+
+        CreateFaceVisuals(
+            BoundaryFace.Back,
+            ("BottomBack", new Vector3(min.x, min.y, max.z), new Vector3(max.x, min.y, max.z), boundaryColor, boundaryLineWidth),
+            ("TopBack", new Vector3(min.x, max.y, max.z), max, boundaryColor, boundaryLineWidth),
+            ("VerticalBL", new Vector3(min.x, min.y, max.z), new Vector3(min.x, max.y, max.z), boundaryColor, boundaryLineWidth),
+            ("VerticalBR", max, new Vector3(max.x, min.y, max.z), boundaryColor, boundaryLineWidth),
+            ("TopBoundaryBack", new Vector3(min.x, topLineY, max.z), new Vector3(max.x, topLineY, max.z), topBoundaryColor, boundaryLineWidth * 1.2f));
+
+        CreateFaceVisuals(
+            BoundaryFace.Left,
+            ("BottomLeft", min, new Vector3(min.x, min.y, max.z), boundaryColor, boundaryLineWidth),
+            ("TopLeft", new Vector3(min.x, max.y, min.z), new Vector3(min.x, max.y, max.z), boundaryColor, boundaryLineWidth),
+            ("VerticalFL", min, new Vector3(min.x, max.y, min.z), boundaryColor, boundaryLineWidth),
+            ("VerticalBL", new Vector3(min.x, min.y, max.z), new Vector3(min.x, max.y, max.z), boundaryColor, boundaryLineWidth),
+            ("TopBoundaryLeft", new Vector3(min.x, topLineY, min.z), new Vector3(min.x, topLineY, max.z), topBoundaryColor, boundaryLineWidth * 1.2f));
+
+        CreateFaceVisuals(
+            BoundaryFace.Right,
+            ("BottomRight", new Vector3(max.x, min.y, min.z), new Vector3(max.x, min.y, max.z), boundaryColor, boundaryLineWidth),
+            ("TopRight", new Vector3(max.x, max.y, min.z), new Vector3(max.x, max.y, max.z), boundaryColor, boundaryLineWidth),
+            ("VerticalFR", new Vector3(max.x, min.y, min.z), new Vector3(max.x, max.y, min.z), boundaryColor, boundaryLineWidth),
+            ("VerticalBR", max, new Vector3(max.x, min.y, max.z), boundaryColor, boundaryLineWidth),
+            ("TopBoundaryRight", new Vector3(max.x, topLineY, min.z), new Vector3(max.x, topLineY, max.z), topBoundaryColor, boundaryLineWidth * 1.2f));
+
+        UpdateRuntimeBoundaryFaceVisibility(forceRefresh: true);
     }
 
     private void CreateLine(string lineName, Vector3 start, Vector3 end, Color color, float widthValue)
     {
+        CreateLine(boundaryVisualRoot.transform, lineName, start, end, color, widthValue);
+    }
+
+    private void CreateLine(Transform parent, string lineName, Vector3 start, Vector3 end, Color color, float widthValue)
+    {
         GameObject lineObject = new GameObject(lineName);
-        lineObject.transform.SetParent(boundaryVisualRoot.transform, false);
+        lineObject.transform.SetParent(parent, false);
 
         LineRenderer line = lineObject.AddComponent<LineRenderer>();
         line.useWorldSpace = false;
@@ -554,6 +584,117 @@ public class TetrisGrid : MonoBehaviour
         line.receiveShadows = false;
     }
 
+    private void CreateFaceVisuals(
+        BoundaryFace face,
+        params (string Name, Vector3 Start, Vector3 End, Color Color, float Width)[] lines)
+    {
+        if (boundaryVisualRoot == null)
+        {
+            return;
+        }
+
+        GameObject faceRoot = new GameObject(face + "Face");
+        faceRoot.transform.SetParent(boundaryVisualRoot.transform, false);
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            CreateLine(faceRoot.transform, line.Name, line.Start, line.End, line.Color, line.Width);
+        }
+
+        boundaryFaceRoots[face] = faceRoot;
+    }
+
+    private void UpdateRuntimeBoundaryFaceVisibility(bool forceRefresh = false)
+    {
+        if (boundaryVisualRoot == null || boundaryFaceRoots.Count == 0)
+        {
+            return;
+        }
+
+        BoundaryFaceSet viewedFaces = ResolveViewedBoundaryFaces();
+        if (!forceRefresh && viewedFaces == activeBoundaryFaces)
+        {
+            return;
+        }
+
+        activeBoundaryFaces = viewedFaces;
+        foreach (KeyValuePair<BoundaryFace, GameObject> pair in boundaryFaceRoots)
+        {
+            if (pair.Value == null)
+            {
+                continue;
+            }
+
+            pair.Value.SetActive((viewedFaces & ToFaceSet(pair.Key)) != 0);
+        }
+    }
+
+    private BoundaryFaceSet ResolveViewedBoundaryFaces()
+    {
+        Camera viewCamera = ResolveGameplayCamera();
+        if (viewCamera == null)
+        {
+            return BoundaryFaceSet.None;
+        }
+
+        Vector3 forward = viewCamera.transform.forward.normalized;
+        if (Mathf.Abs(forward.y) >= 0.88f)
+        {
+            return BoundaryFaceSet.None;
+        }
+
+        Vector3 planarForward = Vector3.ProjectOnPlane(forward, Vector3.up);
+        if (planarForward.sqrMagnitude < 0.0001f)
+        {
+            return BoundaryFaceSet.None;
+        }
+
+        planarForward.Normalize();
+        BoundaryFaceSet visibleFaces = BoundaryFaceSet.None;
+        const float diagonalThreshold = 0.2f;
+
+        if (Mathf.Abs(planarForward.x) >= diagonalThreshold)
+        {
+            // Show the face farthest from the camera along the X axis.
+            visibleFaces |= planarForward.x >= 0f ? BoundaryFaceSet.Right : BoundaryFaceSet.Left;
+        }
+
+        if (Mathf.Abs(planarForward.z) >= diagonalThreshold)
+        {
+            // Show the face farthest from the camera along the Z axis.
+            visibleFaces |= planarForward.z >= 0f ? BoundaryFaceSet.Back : BoundaryFaceSet.Front;
+        }
+
+        if (visibleFaces != BoundaryFaceSet.None)
+        {
+            return visibleFaces;
+        }
+
+        if (Mathf.Abs(planarForward.x) > Mathf.Abs(planarForward.z))
+        {
+            return planarForward.x >= 0f ? BoundaryFaceSet.Right : BoundaryFaceSet.Left;
+        }
+
+        return planarForward.z >= 0f ? BoundaryFaceSet.Back : BoundaryFaceSet.Front;
+    }
+
+    private Camera ResolveGameplayCamera()
+    {
+        if (gameplayCamera != null)
+        {
+            return gameplayCamera;
+        }
+
+        if (orbitCamera == null)
+        {
+            orbitCamera = FindAnyObjectByType<OrbitCamera>();
+        }
+
+        gameplayCamera = orbitCamera != null ? orbitCamera.GetComponent<Camera>() : Camera.main;
+        return gameplayCamera;
+    }
+
     private Material GetLineMaterial()
     {
         if (runtimeLineMaterial != null) return runtimeLineMaterial;
@@ -566,6 +707,36 @@ public class TetrisGrid : MonoBehaviour
 
         runtimeLineMaterial = shader != null ? new Material(shader) : null;
         return runtimeLineMaterial;
+    }
+
+    private enum BoundaryFace
+    {
+        Front,
+        Back,
+        Left,
+        Right
+    }
+
+    [Flags]
+    private enum BoundaryFaceSet
+    {
+        None = 0,
+        Front = 1 << 0,
+        Back = 1 << 1,
+        Left = 1 << 2,
+        Right = 1 << 3
+    }
+
+    private static BoundaryFaceSet ToFaceSet(BoundaryFace face)
+    {
+        return face switch
+        {
+            BoundaryFace.Front => BoundaryFaceSet.Front,
+            BoundaryFace.Back => BoundaryFaceSet.Back,
+            BoundaryFace.Left => BoundaryFaceSet.Left,
+            BoundaryFace.Right => BoundaryFaceSet.Right,
+            _ => BoundaryFaceSet.None
+        };
     }
 
     // ---------------------------------------------------------------------

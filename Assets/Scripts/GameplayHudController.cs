@@ -55,6 +55,13 @@ public class GameplayHudController : MonoBehaviour
     [SerializeField] private RenderTexture pieceSRenderTexture;
     [SerializeField] private RenderTexture pieceTRenderTexture;
     [SerializeField] private RenderTexture pieceZRenderTexture;
+    [SerializeField] private RenderTexture ghostPieceIRenderTexture;
+    [SerializeField] private RenderTexture ghostPieceJRenderTexture;
+    [SerializeField] private RenderTexture ghostPieceLRenderTexture;
+    [SerializeField] private RenderTexture ghostPieceORenderTexture;
+    [SerializeField] private RenderTexture ghostPieceSRenderTexture;
+    [SerializeField] private RenderTexture ghostPieceTRenderTexture;
+    [SerializeField] private RenderTexture ghostPieceZRenderTexture;
     [SerializeField] private Canvas targetHudCanvas;
     [SerializeField] private Canvas pausedCanvas;
     [SerializeField] private TMP_Text scoreNumberTmpText;
@@ -578,10 +585,17 @@ public class GameplayHudController : MonoBehaviour
         if (pieceController == null) return;
 
         string heldPieceCode = pieceController.GetHeldPieceCode();
-        Texture heldPreviewTexture = GetPreviewTexture(heldPieceCode);
         bool showHeldGhostState = !pieceController.CanUseHold && !string.IsNullOrWhiteSpace(heldPieceCode);
-        bool appliedSceneGhostMaterial = ApplyScenePreviewGhostState(heldPieceCode, showHeldGhostState);
-        bool useFallbackGhostLook = showHeldGhostState && !appliedSceneGhostMaterial;
+        Texture heldPreviewTexture = showHeldGhostState ? GetGhostPreviewTexture(heldPieceCode) : null;
+        bool useFallbackGhostLook = showHeldGhostState && heldPreviewTexture == null;
+
+        if (heldPreviewTexture == null)
+        {
+            heldPreviewTexture = GetPreviewTexture(heldPieceCode);
+        }
+
+        // Dedicated ghost hold cameras make the old shared preview-stage override unnecessary here.
+        RestoreScenePreviewPieceMaterials();
 
         if (holdPreviewWidget != null)
         {
@@ -725,6 +739,34 @@ public class GameplayHudController : MonoBehaviour
                 return pieceTRenderTexture != null ? pieceTRenderTexture : pieceTTexture;
             case "Z":
                 return pieceZRenderTexture != null ? pieceZRenderTexture : pieceZTexture;
+            default:
+                return null;
+        }
+    }
+
+    private Texture GetGhostPreviewTexture(string pieceCode)
+    {
+        if (string.IsNullOrWhiteSpace(pieceCode))
+        {
+            return null;
+        }
+
+        switch (pieceCode.Trim().ToUpperInvariant())
+        {
+            case "I":
+                return ghostPieceIRenderTexture;
+            case "J":
+                return ghostPieceJRenderTexture;
+            case "L":
+                return ghostPieceLRenderTexture;
+            case "O":
+                return ghostPieceORenderTexture;
+            case "S":
+                return ghostPieceSRenderTexture;
+            case "T":
+                return ghostPieceTRenderTexture;
+            case "Z":
+                return ghostPieceZRenderTexture;
             default:
                 return null;
         }
@@ -978,6 +1020,13 @@ public class GameplayHudController : MonoBehaviour
         pieceSRenderTexture = ResolvePreviewRenderTexture(pieceSRenderTexture, "Assets/RenderTextures/RTPieceS.renderTexture");
         pieceTRenderTexture = ResolvePreviewRenderTexture(pieceTRenderTexture, "Assets/RenderTextures/RTPieceT.renderTexture");
         pieceZRenderTexture = ResolvePreviewRenderTexture(pieceZRenderTexture, "Assets/RenderTextures/RTPieceZ.renderTexture");
+        ghostPieceIRenderTexture = ResolvePreviewRenderTexture(ghostPieceIRenderTexture, "Assets/RenderTextures/GhostRTPieceI.renderTexture");
+        ghostPieceJRenderTexture = ResolvePreviewRenderTexture(ghostPieceJRenderTexture, "Assets/RenderTextures/GhostRTPieceJ.renderTexture");
+        ghostPieceLRenderTexture = ResolvePreviewRenderTexture(ghostPieceLRenderTexture, "Assets/RenderTextures/GhostRTPieceL.renderTexture");
+        ghostPieceORenderTexture = ResolvePreviewRenderTexture(ghostPieceORenderTexture, "Assets/RenderTextures/GhostRTPieceO.renderTexture");
+        ghostPieceSRenderTexture = ResolvePreviewRenderTexture(ghostPieceSRenderTexture, "Assets/RenderTextures/GhostRTPieceS.renderTexture");
+        ghostPieceTRenderTexture = ResolvePreviewRenderTexture(ghostPieceTRenderTexture, "Assets/RenderTextures/GhostRTPieceT.renderTexture");
+        ghostPieceZRenderTexture = ResolvePreviewRenderTexture(ghostPieceZRenderTexture, "Assets/RenderTextures/GhostRTPieceZ.renderTexture");
 #endif
     }
 

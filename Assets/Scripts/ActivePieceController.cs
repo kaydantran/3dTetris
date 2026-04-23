@@ -192,13 +192,13 @@ public class ActivePieceController : MonoBehaviour
         moveOutwardKey = KeyCode.W;
         holdKey = KeyCode.Q;
         rotateCounterClockwiseKey = KeyCode.J;
-        rotateClockwiseKey = KeyCode.K;
-        rotateUpKey = KeyCode.U;
-        rotateDownKey = KeyCode.N;
+        rotateClockwiseKey = KeyCode.L;
+        rotateUpKey = KeyCode.I;
+        rotateDownKey = KeyCode.K;
         cameraModifierKey = KeyCode.LeftShift;
         softDropKey = KeyCode.RightShift;
-        elevateViewKey = KeyCode.U;
-        flattenViewKey = KeyCode.N;
+        elevateViewKey = KeyCode.I;
+        flattenViewKey = KeyCode.K;
     }
 
     private void ApplySavedTimingSettings()
