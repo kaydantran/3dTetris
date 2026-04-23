@@ -588,7 +588,10 @@ public class ActivePieceController : MonoBehaviour
             return true;
         }
 
-        if (string.Equals(pieceCode, "J", StringComparison.Ordinal) || string.Equals(pieceCode, "L", StringComparison.Ordinal))
+        if (string.Equals(pieceCode, "J", StringComparison.Ordinal)
+            || string.Equals(pieceCode, "L", StringComparison.Ordinal)
+            || string.Equals(pieceCode, "S", StringComparison.Ordinal)
+            || string.Equals(pieceCode, "Z", StringComparison.Ordinal))
         {
             return true;
         }

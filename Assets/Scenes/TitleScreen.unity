@@ -1611,9 +1611,9 @@ MonoBehaviour:
   dasInputField: {fileID: 562189748}
   arrInputField: {fileID: 423744422}
   playButton: {fileID: 1504564145}
-  optionsButton: {fileID: 0}
-  backButton: {fileID: 0}
-  quitButton: {fileID: 0}
+  optionsButton: {fileID: 1066330766}
+  backButton: {fileID: 2136742371}
+  quitButton: {fileID: 1678122969}
   titlePanel: {fileID: 522783151}
   optionsPanel: {fileID: 866200099}
 --- !u!4 &752721713

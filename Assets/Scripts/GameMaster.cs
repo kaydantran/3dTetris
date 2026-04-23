@@ -15,6 +15,8 @@ using UnityEditor;
 [RequireComponent(typeof(AudioSource))]
 public class GameMaster : MonoBehaviour
 {
+    private const string EndScreenSceneName = "EndScreen";
+
     [SerializeField] private ActivePieceController pieceController;
 
     [Tooltip("How many layers must be cleared before the drop speed increases.")]
@@ -51,12 +53,17 @@ public class GameMaster : MonoBehaviour
     [SerializeField] private float trailLifetime = 0.55f;
     [SerializeField] private float trailStartWidth = 0.18f;
     [SerializeField] private float trailEndWidth = 0.01f;
+    [SerializeField] private string endScreenSceneName = EndScreenSceneName;
 
     private int totalLayersCleared;
     private int layersSinceLastBump;
     private int totalPiecesLocked;
+    private int totalTetrises;
+    private int currentCombo;
+    private int maxCombo;
     private int score;
     private bool isGameOver;
+    private string gameOverReason = string.Empty;
     private float gameplayStartTime = -1f;
     private float lastLayerClearTime = -1f;
     private float finalElapsedGameplayTime;
@@ -74,6 +81,8 @@ public class GameMaster : MonoBehaviour
     public int Score => score;
     public int TotalLayersCleared => totalLayersCleared;
     public int TotalPiecesLocked => totalPiecesLocked;
+    public int TotalTetrises => totalTetrises;
+    public int MaxCombo => maxCombo;
     public float ElapsedGameplayTime => isGameOver ? finalElapsedGameplayTime : CalculateElapsedGameplayTime();
     public float PiecesPerSecond => isGameOver ? finalPiecesPerSecond : CalculatePiecesPerSecond();
     public bool IsGameOver => isGameOver;
@@ -160,6 +169,7 @@ public class GameMaster : MonoBehaviour
     {
         if (gameplayStartTime >= 0f) return;
 
+        GameRunSummary.Clear();
         gameplayStartTime = Time.time;
         NotifyStatsChanged();
     }
@@ -184,6 +194,7 @@ public class GameMaster : MonoBehaviour
         totalLayersCleared += count;
         layersSinceLastBump += count;
         float currentGameplayTime = CalculateElapsedGameplayTime();
+        UpdateComboStats(count, currentGameplayTime);
         score += GetLineClearScore(count, CalculateQuickClearBonus(count, currentGameplayTime));
         lastLayerClearTime = currentGameplayTime;
 
@@ -205,9 +216,11 @@ public class GameMaster : MonoBehaviour
 
         ResumeFromPauseIfNeeded();
 
+        gameOverReason = reason ?? string.Empty;
         finalElapsedGameplayTime = CalculateElapsedGameplayTime();
         finalPiecesPerSecond = CalculatePiecesPerSecond();
         isGameOver = true;
+        SaveRunSummary();
         NotifyStatsChanged();
         Debug.Log($"Game Over: {reason}");
     }
@@ -309,6 +322,21 @@ public class GameMaster : MonoBehaviour
         return speedBonus + microBonus;
     }
 
+    private void UpdateComboStats(int clearedLayers, float currentGameplayTime)
+    {
+        if (clearedLayers == 4)
+        {
+            totalTetrises++;
+        }
+
+        float comboWindow = Mathf.Max(0.1f, quickClearBonusWindow);
+        bool continuesCombo = lastLayerClearTime >= 0f
+            && currentGameplayTime - lastLayerClearTime <= comboWindow;
+
+        currentCombo = continuesCombo ? currentCombo + 1 : 1;
+        maxCombo = Mathf.Max(maxCombo, currentCombo);
+    }
+
     private float CalculatePiecesPerSecond()
     {
         if (gameplayStartTime < 0f) return 0f;
@@ -351,6 +379,34 @@ public class GameMaster : MonoBehaviour
         StatsChanged?.Invoke();
     }
 
+    private void SaveRunSummary()
+    {
+        GameRunSummary.Save(new GameRunSummary.SummaryData
+        {
+            Score = score,
+            TotalLayersCleared = totalLayersCleared,
+            TotalPiecesLocked = totalPiecesLocked,
+            ElapsedGameplayTime = finalElapsedGameplayTime,
+            PiecesPerSecond = finalPiecesPerSecond,
+            TotalTetrises = totalTetrises,
+            MaxCombo = maxCombo,
+            GameOverReason = gameOverReason
+        });
+    }
+
+    private void LoadEndScreen()
+    {
+        RestoreTimeScale();
+
+        if (Application.CanStreamedLevelBeLoaded(endScreenSceneName))
+        {
+            SceneManager.LoadScene(endScreenSceneName);
+            return;
+        }
+
+        Debug.LogWarning($"Could not load end screen scene '{endScreenSceneName}'.");
+    }
+
     private void ResumeFromPauseIfNeeded()
     {
         if (!isPaused)
@@ -387,6 +443,7 @@ public class GameMaster : MonoBehaviour
         if (cubes == null || cubes.Count == 0)
         {
             gameOverRoutine = null;
+            LoadEndScreen();
             yield break;
         }
 
@@ -440,6 +497,7 @@ public class GameMaster : MonoBehaviour
         }
 
         gameOverRoutine = null;
+        LoadEndScreen();
     }
 
     private IEnumerator PlayGameOverIntroBeat(float duration)

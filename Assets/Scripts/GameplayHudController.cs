@@ -1033,7 +1033,7 @@ public class GameplayHudController : MonoBehaviour
 
         pauseInfoTmpText.text =
             "RUN DATA\n\n" +
-            $"LINES CLEARED: {gameMaster.TotalLayersCleared}\n" +
+            $"LAYERS CLEARED: {gameMaster.TotalLayersCleared}\n" +
             $"PIECES/SECOND: {gameMaster.PiecesPerSecond:0.00}\n\n\n" +
             "TIMING SETTINGS\n\nDAS (ms)\n\nARR (ms)";
     }
