@@ -48,6 +48,7 @@ public class TetrisGrid : MonoBehaviour
     private Material runtimeLineMaterial;
     private bool runtimeBoundaryVisualsDirty;
     private readonly Dictionary<BoundaryFace, GameObject> boundaryFaceRoots = new Dictionary<BoundaryFace, GameObject>();
+    private readonly Dictionary<BoundaryFace, GameObject> boundaryFaceFillRoots = new Dictionary<BoundaryFace, GameObject>();
     private BoundaryFaceSet activeBoundaryFaces = BoundaryFaceSet.None;
 
     public int Width => width;
@@ -488,6 +489,7 @@ public class TetrisGrid : MonoBehaviour
     private void RebuildRuntimeBoundaryVisuals()
     {
         boundaryFaceRoots.Clear();
+        boundaryFaceFillRoots.Clear();
         activeBoundaryFaces = BoundaryFaceSet.None;
 
         if (boundaryVisualRoot != null)
@@ -530,6 +532,7 @@ public class TetrisGrid : MonoBehaviour
             ("VerticalFL", min, new Vector3(min.x, max.y, min.z), boundaryColor, boundaryLineWidth),
             ("VerticalFR", new Vector3(max.x, min.y, min.z), new Vector3(max.x, max.y, min.z), boundaryColor, boundaryLineWidth),
             ("TopBoundaryFront", new Vector3(min.x, topLineY, min.z), new Vector3(max.x, topLineY, min.z), topBoundaryColor, boundaryLineWidth * 1.2f));
+        CreateFaceFillVisuals(BoundaryFace.Front, min, max);
 
         CreateFaceVisuals(
             BoundaryFace.Back,
@@ -538,6 +541,7 @@ public class TetrisGrid : MonoBehaviour
             ("VerticalBL", new Vector3(min.x, min.y, max.z), new Vector3(min.x, max.y, max.z), boundaryColor, boundaryLineWidth),
             ("VerticalBR", max, new Vector3(max.x, min.y, max.z), boundaryColor, boundaryLineWidth),
             ("TopBoundaryBack", new Vector3(min.x, topLineY, max.z), new Vector3(max.x, topLineY, max.z), topBoundaryColor, boundaryLineWidth * 1.2f));
+        CreateFaceFillVisuals(BoundaryFace.Back, min, max);
 
         CreateFaceVisuals(
             BoundaryFace.Left,
@@ -546,6 +550,7 @@ public class TetrisGrid : MonoBehaviour
             ("VerticalFL", min, new Vector3(min.x, max.y, min.z), boundaryColor, boundaryLineWidth),
             ("VerticalBL", new Vector3(min.x, min.y, max.z), new Vector3(min.x, max.y, max.z), boundaryColor, boundaryLineWidth),
             ("TopBoundaryLeft", new Vector3(min.x, topLineY, min.z), new Vector3(min.x, topLineY, max.z), topBoundaryColor, boundaryLineWidth * 1.2f));
+        CreateFaceFillVisuals(BoundaryFace.Left, min, max);
 
         CreateFaceVisuals(
             BoundaryFace.Right,
@@ -554,6 +559,7 @@ public class TetrisGrid : MonoBehaviour
             ("VerticalFR", new Vector3(max.x, min.y, min.z), new Vector3(max.x, max.y, min.z), boundaryColor, boundaryLineWidth),
             ("VerticalBR", max, new Vector3(max.x, min.y, max.z), boundaryColor, boundaryLineWidth),
             ("TopBoundaryRight", new Vector3(max.x, topLineY, min.z), new Vector3(max.x, topLineY, max.z), topBoundaryColor, boundaryLineWidth * 1.2f));
+        CreateFaceFillVisuals(BoundaryFace.Right, min, max);
 
         UpdateRuntimeBoundaryFaceVisibility(forceRefresh: true);
     }
@@ -605,9 +611,84 @@ public class TetrisGrid : MonoBehaviour
         boundaryFaceRoots[face] = faceRoot;
     }
 
+    private void CreateFaceFillVisuals(BoundaryFace face, Vector3 min, Vector3 max)
+    {
+        if (boundaryVisualRoot == null)
+        {
+            return;
+        }
+
+        GameObject fillRoot = new GameObject(face + "FaceFill");
+        fillRoot.transform.SetParent(boundaryVisualRoot.transform, false);
+
+        float fillWidth = boundaryLineWidth * 0.5f;
+        switch (face)
+        {
+            case BoundaryFace.Front:
+            case BoundaryFace.Back:
+            {
+                float z = face == BoundaryFace.Front ? min.z : max.z;
+                for (int x = 0; x <= width; x++)
+                {
+                    CreateLine(
+                        fillRoot.transform,
+                        $"{face}FillVertical_{x}",
+                        new Vector3(x - 0.5f, min.y, z),
+                        new Vector3(x - 0.5f, max.y, z),
+                        floorGridColor,
+                        fillWidth);
+                }
+
+                for (int y = 0; y <= height; y++)
+                {
+                    CreateLine(
+                        fillRoot.transform,
+                        $"{face}FillHorizontal_{y}",
+                        new Vector3(min.x, y - 0.5f, z),
+                        new Vector3(max.x, y - 0.5f, z),
+                        floorGridColor,
+                        fillWidth);
+                }
+
+                break;
+            }
+            case BoundaryFace.Left:
+            case BoundaryFace.Right:
+            {
+                float x = face == BoundaryFace.Left ? min.x : max.x;
+                for (int z = 0; z <= depth; z++)
+                {
+                    CreateLine(
+                        fillRoot.transform,
+                        $"{face}FillVertical_{z}",
+                        new Vector3(x, min.y, z - 0.5f),
+                        new Vector3(x, max.y, z - 0.5f),
+                        floorGridColor,
+                        fillWidth);
+                }
+
+                for (int y = 0; y <= height; y++)
+                {
+                    CreateLine(
+                        fillRoot.transform,
+                        $"{face}FillHorizontal_{y}",
+                        new Vector3(x, y - 0.5f, min.z),
+                        new Vector3(x, y - 0.5f, max.z),
+                        floorGridColor,
+                        fillWidth);
+                }
+
+                break;
+            }
+        }
+
+        fillRoot.SetActive(false);
+        boundaryFaceFillRoots[face] = fillRoot;
+    }
+
     private void UpdateRuntimeBoundaryFaceVisibility(bool forceRefresh = false)
     {
-        if (boundaryVisualRoot == null || boundaryFaceRoots.Count == 0)
+        if (boundaryVisualRoot == null || boundaryFaceFillRoots.Count == 0)
         {
             return;
         }
@@ -620,6 +701,14 @@ public class TetrisGrid : MonoBehaviour
 
         activeBoundaryFaces = viewedFaces;
         foreach (KeyValuePair<BoundaryFace, GameObject> pair in boundaryFaceRoots)
+        {
+            if (pair.Value != null)
+            {
+                pair.Value.SetActive(true);
+            }
+        }
+
+        foreach (KeyValuePair<BoundaryFace, GameObject> pair in boundaryFaceFillRoots)
         {
             if (pair.Value == null)
             {
@@ -638,45 +727,59 @@ public class TetrisGrid : MonoBehaviour
             return BoundaryFaceSet.None;
         }
 
-        Vector3 forward = viewCamera.transform.forward.normalized;
-        if (Mathf.Abs(forward.y) >= 0.88f)
-        {
-            return BoundaryFaceSet.None;
-        }
-
-        Vector3 planarForward = Vector3.ProjectOnPlane(forward, Vector3.up);
+        Vector3 planarForward = Vector3.ProjectOnPlane(viewCamera.transform.forward, Vector3.up);
         if (planarForward.sqrMagnitude < 0.0001f)
         {
-            return BoundaryFaceSet.None;
+            // Top-down views lose almost all horizontal forward information, so fall back to
+            // the camera's orbital position around the grid to preserve the same face logic.
+            planarForward = Vector3.ProjectOnPlane(Center - viewCamera.transform.position, Vector3.up);
+        }
+
+        if (planarForward.sqrMagnitude < 0.0001f)
+        {
+            return activeBoundaryFaces != BoundaryFaceSet.None ? activeBoundaryFaces : BoundaryFaceSet.None;
         }
 
         planarForward.Normalize();
         BoundaryFaceSet visibleFaces = BoundaryFaceSet.None;
         const float diagonalThreshold = 0.2f;
+        bool hasStrongX = Mathf.Abs(planarForward.x) >= diagonalThreshold;
+        bool hasStrongZ = Mathf.Abs(planarForward.z) >= diagonalThreshold;
 
-        if (Mathf.Abs(planarForward.x) >= diagonalThreshold)
+        if (hasStrongX && hasStrongZ)
         {
-            // Show the face farthest from the camera along the X axis.
+            // Diagonal views highlight the two far faces.
             visibleFaces |= planarForward.x >= 0f ? BoundaryFaceSet.Right : BoundaryFaceSet.Left;
-        }
-
-        if (Mathf.Abs(planarForward.z) >= diagonalThreshold)
-        {
-            // Show the face farthest from the camera along the Z axis.
             visibleFaces |= planarForward.z >= 0f ? BoundaryFaceSet.Back : BoundaryFaceSet.Front;
+            return visibleFaces;
         }
 
-        if (visibleFaces != BoundaryFaceSet.None)
+        if (hasStrongX)
         {
+            // Side-on views highlight the far side plus the two faces that recede away from the camera.
+            visibleFaces |= planarForward.x >= 0f ? BoundaryFaceSet.Right : BoundaryFaceSet.Left;
+            visibleFaces |= BoundaryFaceSet.Front | BoundaryFaceSet.Back;
+            return visibleFaces;
+        }
+
+        if (hasStrongZ)
+        {
+            // Straight-on front/back views highlight the far face plus both side faces.
+            visibleFaces |= planarForward.z >= 0f ? BoundaryFaceSet.Back : BoundaryFaceSet.Front;
+            visibleFaces |= BoundaryFaceSet.Left | BoundaryFaceSet.Right;
             return visibleFaces;
         }
 
         if (Mathf.Abs(planarForward.x) > Mathf.Abs(planarForward.z))
         {
-            return planarForward.x >= 0f ? BoundaryFaceSet.Right : BoundaryFaceSet.Left;
+            return (planarForward.x >= 0f ? BoundaryFaceSet.Right : BoundaryFaceSet.Left)
+                | BoundaryFaceSet.Front
+                | BoundaryFaceSet.Back;
         }
 
-        return planarForward.z >= 0f ? BoundaryFaceSet.Back : BoundaryFaceSet.Front;
+        return (planarForward.z >= 0f ? BoundaryFaceSet.Back : BoundaryFaceSet.Front)
+            | BoundaryFaceSet.Left
+            | BoundaryFaceSet.Right;
     }
 
     private Camera ResolveGameplayCamera()
