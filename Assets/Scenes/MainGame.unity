@@ -5504,7 +5504,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 25, y: 25}
-  m_SizeDelta: {x: 800, y: 575}
+  m_SizeDelta: {x: 800, y: 600}
   m_Pivot: {x: 0, y: 0}
 --- !u!114 &2001320077
 MonoBehaviour:
@@ -5555,10 +5555,12 @@ MonoBehaviour:
 
     R SHIFT - SOFT DROP
 
-    R - RESTART GAME
+    SPACE - HARD DROP
 
-    ESC - PAUSE
-    GAME'
+    R - RESTART
+    GAME
+
+    ESC - PAUSE GAME'
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: cfb824b0bb53340fbb111d57650bf86a, type: 2}
   m_sharedMaterial: {fileID: -1459402800290200993, guid: cfb824b0bb53340fbb111d57650bf86a, type: 2}
